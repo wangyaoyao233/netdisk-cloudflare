@@ -144,6 +144,25 @@ function App() {
 
   return (
     <div className="min-h-screen bg-[#f8fafc] text-slate-900 font-sans selection:bg-indigo-100">
+      {/* Full page drag overlay */}
+      {dragActive && (
+        <div 
+          className="fixed inset-0 z-50 bg-indigo-600/90 backdrop-blur-sm flex flex-col items-center justify-center text-white p-6 transition-all duration-300"
+          onDragEnter={handleDrag}
+          onDragLeave={handleDrag}
+          onDragOver={handleDrag}
+          onDrop={handleDrop}
+        >
+          <div className="p-8 rounded-full bg-white/20 border-4 border-dashed border-white/40 animate-pulse">
+            <Upload className="w-20 h-20" />
+          </div>
+          <h2 className="mt-8 text-3xl font-bold">Drop to Upload</h2>
+          <p className="mt-2 text-indigo-100 text-lg text-center">
+            Files will be uploaded to <strong>{pathStack.length > 0 ? pathStack[pathStack.length-1].name : 'Root'}</strong>
+          </p>
+        </div>
+      )}
+
       {/* Header */}
       <nav className="sticky top-0 z-20 bg-white/70 backdrop-blur-xl border-b border-slate-200/60">
         <div className="max-w-6xl mx-auto px-6 h-16 flex items-center justify-between">
@@ -154,27 +173,24 @@ function App() {
             <span className="font-bold text-lg tracking-tight bg-clip-text text-transparent bg-gradient-to-r from-slate-900 to-slate-600">CloudNet</span>
           </div>
           
-          <div className="flex items-center gap-6">
-            <button 
-              onClick={handleCreateFolder}
-              className="hidden md:flex items-center gap-2 text-sm font-semibold text-slate-600 hover:text-indigo-600 transition-colors"
-            >
-              <Plus className="w-4 h-4" />
-              New Folder
-            </button>
+          <div className="flex items-center gap-4">
             <div className="h-4 w-[1px] bg-slate-200 hidden md:block"></div>
-            <button 
-              onClick={() => fileInputRef.current?.click()}
-              className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-xl text-sm font-semibold transition-all shadow-sm shadow-indigo-100 active:scale-95"
-            >
-              <Plus className="w-4 h-4" />
-              Upload
-            </button>
+            <div className="text-xs font-medium text-slate-400 hidden sm:block">
+              {uploading ? (
+                <span className="flex items-center gap-2 text-indigo-600">
+                  <div className="w-3 h-3 border-2 border-indigo-600 border-t-transparent rounded-full animate-spin"></div>
+                  Uploading...
+                </span>
+              ) : 'Connected to R2'}
+            </div>
           </div>
         </div>
       </nav>
 
-      <main className="max-w-6xl mx-auto px-6 py-10 space-y-10">
+      <main 
+        className="max-w-6xl mx-auto px-6 py-10 space-y-8"
+        onDragEnter={handleDrag}
+      >
         {/* Breadcrumbs */}
         <nav className="flex items-center gap-2 text-sm font-medium text-slate-500 overflow-x-auto whitespace-nowrap pb-2">
           <button 
@@ -196,76 +212,45 @@ function App() {
           ))}
         </nav>
 
-        {/* Upload Dropzone Area */}
-        <section>
-          <div 
-            onDragEnter={handleDrag} 
-            onSubmit={(e) => e.preventDefault()}
-            className={`group relative overflow-hidden rounded-3xl border-2 border-dashed transition-all duration-500 
-              ${dragActive ? 'border-indigo-500 bg-indigo-50/50 scale-[1.01] shadow-xl shadow-indigo-100' : 'border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50/50'}`}
-          >
-            <input 
-              ref={fileInputRef}
-              type="file" 
-              className="hidden" 
-              onChange={handleChange}
-            />
-            
-            <div className="p-12 flex flex-col items-center justify-center gap-6">
-              {uploading ? (
-                <div className="flex flex-col items-center gap-4">
-                  <div className="relative h-16 w-16">
-                    <div className="absolute inset-0 border-4 border-slate-100 rounded-full"></div>
-                    <div className="absolute inset-0 border-4 border-indigo-600 border-t-transparent rounded-full animate-spin"></div>
-                  </div>
-                  <div className="text-center">
-                    <p className="text-slate-900 font-semibold text-lg">Uploading...</p>
-                    <p className="text-slate-400 text-sm">Transferring to Cloudflare R2</p>
-                  </div>
-                </div>
-              ) : (
-                <>
-                  <div className={`p-5 rounded-2xl transition-all duration-300 ${dragActive ? 'bg-indigo-600 text-white rotate-12' : 'bg-slate-50 text-slate-400 group-hover:bg-indigo-50 group-hover:text-indigo-500 group-hover:-rotate-6'}`}>
-                    <Upload className="w-10 h-10" />
-                  </div>
-                  <div className="text-center space-y-2">
-                    <h3 className="text-xl font-bold text-slate-800">Drop files here to upload</h3>
-                    <p className="text-slate-500 text-sm">
-                      Your files will be stored in <strong>{pathStack.length > 0 ? pathStack[pathStack.length-1].name : 'Root'}</strong>
-                    </p>
-                  </div>
-                </>
-              )}
-            </div>
-            
-            {dragActive && (
-              <div 
-                className="absolute inset-0 z-10"
-                onDragEnter={handleDrag}
-                onDragLeave={handleDrag}
-                onDragOver={handleDrag}
-                onDrop={handleDrop}
-              ></div>
-            )}
-          </div>
-        </section>
-
         {/* File Browser Section */}
         <section className="space-y-6">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+          <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-6">
             <div>
               <h2 className="text-2xl font-bold text-slate-900 tracking-tight">Files & Folders</h2>
-              <p className="text-slate-500 text-sm">Real-time sync with Cloudflare D1</p>
+              <p className="text-slate-500 text-sm font-medium">Manage your cloud storage</p>
             </div>
             
-            <div className="flex items-center gap-2">
-              <div className="relative group">
+            <div className="flex flex-wrap items-center gap-3">
+              <div className="relative group flex-1 min-w-[200px] sm:flex-none">
                 <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-indigo-500 transition-colors" />
                 <input 
                   type="text" 
                   placeholder="Quick search..." 
                   className="pl-10 pr-4 py-2 bg-white border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500 transition-all w-full sm:w-64 shadow-sm"
                 />
+              </div>
+
+              <div className="flex items-center gap-2">
+                <button 
+                  onClick={handleCreateFolder}
+                  className="flex items-center gap-2 text-sm font-semibold text-slate-600 hover:text-indigo-600 bg-white border border-slate-200 px-4 py-2 rounded-xl transition-all shadow-sm active:scale-95"
+                >
+                  <Plus className="w-4 h-4" />
+                  <span className="hidden sm:inline">New Folder</span>
+                </button>
+                <input 
+                  ref={fileInputRef}
+                  type="file" 
+                  className="hidden" 
+                  onChange={handleChange}
+                />
+                <button 
+                  onClick={() => fileInputRef.current?.click()}
+                  className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-xl text-sm font-semibold transition-all shadow-sm shadow-indigo-100 active:scale-95"
+                >
+                  <Upload className="w-4 h-4" />
+                  <span>Upload</span>
+                </button>
               </div>
             </div>
           </div>
@@ -274,7 +259,7 @@ function App() {
             <div className="overflow-x-auto">
               <table className="w-full text-left border-collapse">
                 <thead>
-                  <tr className="border-b border-slate-100">
+                  <tr className="border-b border-slate-100 bg-slate-50/30">
                     <th className="px-8 py-5 text-[11px] font-bold text-slate-400 uppercase tracking-[0.1em]">Name</th>
                     <th className="px-8 py-5 text-[11px] font-bold text-slate-400 uppercase tracking-[0.1em]">Size</th>
                     <th className="px-8 py-5 text-[11px] font-bold text-slate-400 uppercase tracking-[0.1em]">Created At</th>
@@ -302,7 +287,12 @@ function App() {
                   )}
                   {loading ? (
                     <tr>
-                      <td colSpan={4} className="py-12 text-center text-slate-400 italic">Syncing with database...</td>
+                      <td colSpan={4} className="py-24 text-center">
+                        <div className="flex flex-col items-center gap-3">
+                          <div className="w-8 h-8 border-4 border-indigo-100 border-t-indigo-600 rounded-full animate-spin"></div>
+                          <p className="text-slate-400 text-sm font-medium">Loading your files...</p>
+                        </div>
+                      </td>
                     </tr>
                   ) : files.map((file) => (
                     <tr 
@@ -315,8 +305,8 @@ function App() {
                           <div className="bg-slate-50 p-2.5 rounded-xl transition-colors group-hover:bg-white group-hover:shadow-sm">
                             {getFileIcon(file)}
                           </div>
-                          <div>
-                            <p className="font-semibold text-slate-700 text-sm group-hover:text-indigo-600 transition-colors">{file.name}</p>
+                          <div className="min-w-0">
+                            <p className="font-semibold text-slate-700 text-sm group-hover:text-indigo-600 transition-colors truncate">{file.name}</p>
                             <p className="text-[11px] text-slate-400 font-medium uppercase tracking-wider">{file.type}</p>
                           </div>
                         </div>
@@ -355,12 +345,30 @@ function App() {
             </div>
             
             {!loading && files.length === 0 && (
-              <div className="py-24 text-center">
-                <div className="inline-flex p-6 rounded-3xl bg-slate-50 text-slate-200 mb-6">
+              <div className="py-24 flex flex-col items-center text-center">
+                <div className="inline-flex p-8 rounded-full bg-slate-50 text-slate-200 mb-6 border-4 border-white shadow-inner">
                   <Folder className="w-16 h-16" />
                 </div>
-                <h4 className="text-lg font-bold text-slate-800">Empty Folder</h4>
-                <p className="text-slate-400 mt-1 max-w-xs mx-auto text-sm">This directory is currently empty. Upload files to populate it.</p>
+                <h4 className="text-xl font-bold text-slate-800">No items found</h4>
+                <p className="text-slate-400 mt-2 max-w-xs mx-auto text-sm mb-8">
+                  This folder is empty. Start by creating a new folder or uploading some files.
+                </p>
+                <div className="flex gap-3">
+                  <button 
+                    onClick={handleCreateFolder}
+                    className="flex items-center gap-2 text-sm font-semibold text-slate-600 hover:text-indigo-600 bg-white border border-slate-200 px-6 py-2.5 rounded-xl transition-all shadow-sm"
+                  >
+                    <Plus className="w-4 h-4" />
+                    New Folder
+                  </button>
+                  <button 
+                    onClick={() => fileInputRef.current?.click()}
+                    className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white px-6 py-2.5 rounded-xl text-sm font-semibold transition-all shadow-sm shadow-indigo-100"
+                  >
+                    <Upload className="w-4 h-4" />
+                    Upload File
+                  </button>
+                </div>
               </div>
             )}
             
