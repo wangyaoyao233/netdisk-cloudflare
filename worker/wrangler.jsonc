@@ -23,9 +23,14 @@
 		{
 			"binding": "DB",
 			"database_name": "netdisk-db",
-			"database_id": "your-database-id-from-wrangler"
+			"database_id": "b2736bc7-3cf1-4640-ae3b-85e56d915e68"
 		}
-	]
+	],
+	"vars": {
+		"R2_ACCOUNT_ID": "48fff6f2fffff5ac5c8b9a515a2067cc",
+		"R2_ACCESS_KEY_ID": "ad379b094697ef32bb877f03be5dc343",
+		"BUCKET_NAME": "test"
+	}
 
 	/**
 	 * Smart Placement
