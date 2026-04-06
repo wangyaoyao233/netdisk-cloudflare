@@ -400,3 +400,30 @@
 
 ### 本次的最佳实践总结
 - **保姆级文档 (Tutorial-style Docs)**：对于涉及第三方平台对接的复杂配置，提供步骤清晰、参数明确的图文级说明是提升开发者体验的关键。
+
+## 2026-04-04 18:30 优化前端 API 地址配置方案
+
+### 背景
+原 `fileService.ts` 中 API 基准地址 `API_BASE` 被硬编码为 `http://localhost:8787/api`，这会导致项目在部署到生产环境（如 Cloudflare Pages）后无法正确连接到 Worker 后端。
+
+### 目标
+采用 Vite 环境变量的最佳实践，实现开发环境和生产环境 API 地址的自动切换和灵活配置。
+
+### 采用的修改
+1.  **添加类型定义**：创建 `frontend/src/vite-env.d.ts`，为 `import.meta.env` 添加 `VITE_API_BASE_URL` 的类型支持。
+2.  **配置开发环境变量**：创建 `frontend/.env.development`，设置 `VITE_API_BASE_URL=http://localhost:8787/api`，确保本地开发正常。
+3.  **重构 API 调用逻辑**：修改 `frontend/src/api/fileService.ts`，将 `API_BASE` 改为从 `import.meta.env.VITE_API_BASE_URL` 读取，并提供 `/api` 作为回退值（支持同域部署）。
+
+### 结果
+- 本地开发时，Vite 会自动加载 `.env.development` 中的地址。
+- 生产环境下，可以通过 Cloudflare Pages 的环境变量设置 `VITE_API_BASE_URL`。
+- 如果未设置环境变量且前端与 Worker 同域，则会自动回退到相对路径 `/api`，增强了部署的灵活性。
+
+### 本次的最佳实践总结
+- **解耦环境配置**：永远不要在代码中硬编码环境相关的 URL 或密钥。
+- **利用工具链特性**：充分利用 Vite 的 `.env` 加载机制和类型系统。
+- **提供安全回退**：在读取环境变量时提供合理的默认值，增加系统的健壮性。
+
+### TODO(一些将来可以做的事情)
+- 在 CI/CD 流程中自动注入生产环境的 API 地址。
+- 考虑使用 Vite 的 `proxy` 配置来进一步简化开发环境下的跨域问题。
