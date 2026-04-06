@@ -481,3 +481,9 @@
 ### TODO(一些将来可以做的事情)
 - 考虑在前端代码中增加对 `VITE_API_BASE_URL` 的合法性校验提示。
 - 探索 Cloudflare Pages 的预分发部署（Preview Deployments）环境变量同步方案。
+- **显式优于隐式**：在 CI/CD 环境中，尽可能显式提供必要的配置参数（如 Account ID），减少工具链的猜测和多余的 API 调用。
+- **权限最小化原则**：通过提供 Account ID，我们可以避免给 API Token 开启“查看所有账户成员关系”的过度权限，符合安全最佳实践。
+
+### TODO(一些将来可以做的事情)
+- 检查并优化前端 Cloudflare Pages 的自动构建配置。
+- 考虑为生产环境 D1 数据库添加自动备份脚本。
