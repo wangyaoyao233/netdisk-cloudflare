@@ -10,6 +10,7 @@
   ],
   "scripts": {
     "dev": "concurrently \"npm run dev --workspace=frontend\" \"npm run dev --workspace=worker\"",
+    "dev:remote": "concurrently \"npm run dev --workspace=frontend\" \"npm run dev --workspace=worker -- --remote\"",
     "build": "npm run build --workspace=frontend",
     "deploy:worker": "npm run deploy --workspace=worker"
   },

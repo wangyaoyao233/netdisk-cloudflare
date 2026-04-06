@@ -25,7 +25,7 @@ export interface DownloadUrlResponse {
  * 对接 Cloudflare Worker 后端
  */
 export class FileService {
-  private static readonly API_BASE = 'http://localhost:8787/api';
+  private static readonly API_BASE = import.meta.env.VITE_API_BASE_URL || '/api';
 
   /**
    * 获取文件列表
