@@ -89,7 +89,10 @@ npx wrangler secret put MY_SECRET_KEY
 
 ### 前端 (Pages)
 在 Cloudflare Pages 控制台中，设置以下环境变量：
-*   `VITE_API_BASE_URL`: 指向你部署后的 Worker 域名（例如 `https://worker.your-subdomain.workers.dev`）。
+*   `VITE_API_BASE_URL`: 指向你部署后的 Worker 域名。
+    *   **重要格式要求**：必须包含协议头 `https://` 且推荐包含 `/api` 后缀。
+    *   **正确示例**：`https://worker.your-subdomain.workers.dev/api`
+    *   **错误示例**：`worker.your-subdomain.workers.dev` (会导致路径拼接错误)
 
 ---
 
@@ -107,13 +110,16 @@ npx wrangler secret put MY_SECRET_KEY
 1.  **登录 Cloudflare 控制台**：访问 [dash.cloudflare.com](https://dash.cloudflare.com/)。
 2.  **进入 API 令牌页面**：点击右上角的人头像图标 -> **My Profile (我的个人资料)** -> 左侧菜单选择 **API Tokens (API 令牌)**。
 3.  **创建令牌**：点击 **Create Token (创建令牌)** 按钮。
-4.  **选择模板**：找到 **Edit Cloudflare Workers (编辑 Cloudflare Workers)** 模板，点击 **Use template (使用模板)**。
-5.  **配置权限**（通常模板已默认选好）：
-    *   **Permissions (权限)**：确保包含 `Account | Workers Scripts | Edit` 和 `User | User Details | Read`。
-    *   **Account Resources (账户资源)**：选择 `Include | All accounts`。
-    *   **Zone Resources (区域资源)**：选择 `Include | All zones`。
-6.  **生成并复制**：点击 **Continue to summary** -> **Create Token**。
-7.  **保存 Token**：**请立即复制并安全保存**，关闭页面后将无法再次查看。
+4.  **配置权限**（请确保包含以下 **5 个权限**，缺一不可）：
+    *   **Account** | **Workers Scripts** | **Edit** (部署 Worker 代码)
+    *   **Account** | **Cloudflare R2 Storage** | **Edit** (操作 R2 存储桶)
+    *   **Account** | **D1** | **Edit** (操作 D1 数据库)
+    *   **Account** | **Account Settings** | **Read** (辅助 Wrangler 识别账户)
+    *   **User** | **User Details** | **Read** (获取用户信息)
+5.  **资源范围 (Account Resources)**：选择 `Include | All accounts`。
+6.  **区域范围 (Zone Resources)**：选择 `Include | All zones`。
+7.  **生成并复制**：点击 **Continue to summary** -> **Create Token**。
+8.  **保存 Token**：**请立即复制并安全保存**，关闭页面后将无法再次查看。
 
 #### 第二步：在 GitHub 仓库中设置 Secret
 1.  **进入 GitHub 仓库**：在浏览器中打开你的项目 GitHub 页面。

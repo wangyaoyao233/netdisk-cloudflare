@@ -427,3 +427,57 @@
 ### TODO(一些将来可以做的事情)
 - 在 CI/CD 流程中自动注入生产环境的 API 地址。
 - 考虑使用 Vite 的 `proxy` 配置来进一步简化开发环境下的跨域问题。
+
+## 2026-04-06 14:15 修复 Cloudflare Worker CI/CD 部署权限问题
+
+### 背景
+在 GitHub Actions 自动部署 Worker 时，Wrangler 报错 `Authentication error [code: 10000]`，提示无法访问 `/memberships` 接口。这通常是因为 API Token 权限不足，导致 Wrangler 在尝试自动获取 Account ID 时失败。
+
+### 目标
+解决 CI/CD 部署中断问题，提高部署流程的稳定性和安全性。
+
+### 采用的修改
+1.  **修改 GitHub 工作流**：更新 `.github/workflows/deploy.yml`，在 `wrangler-action` 中显式添加 `accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}`。
+2.  **更新部署文档**：在 `docs/deploy.md` 中补充了关于 `CLOUDFLARE_ACCOUNT_ID` 的配置说明，并提醒用户在 GitHub Secrets 中进行设置。
+
+### 结果
+- 通过显式提供 Account ID，Wrangler 跳过了需要高权限的账户查询步骤（`/memberships`），从而解决了 `10000` 认证错误。
+- 部署流程现在更加健壮，不再依赖 Wrangler 的自动账户探测。
+
+### 本次的最佳实践总结
+- **显式优于隐式**：在 CI/CD 环境中，尽可能显式提供必要的配置参数（如 Account ID），减少工具链的猜测 and 多余的 API 调用。
+- **权限最小化原则**：通过提供 Account ID，我们可以避免给 API Token 开启“查看所有账户成员关系”的过度权限，符合安全最佳实践。
+
+### TODO(一些将来做的事情)
+- 检查并优化前端 Cloudflare Pages 的自动构建配置。
+- 考虑为生产环境 D1 数据库添加自动备份脚本。
+
+## 2026-04-06 15:30 完善部署文档并修复前端 API 地址配置错误
+
+### 背景
+项目在 Pages 和 Worker 均部署成功后，前端调用接口出现 `405 Method Not Allowed` 错误，且请求 URL 出现了异常拼接（Pages 域名后直接跟了 Worker 域名）。同时，CI/CD 部署过程中再次遇到因 API Token 权限不足导致的 R2/D1 访问错误。
+
+### 目标
+1. 彻底解决 CI/CD 部署权限链条。
+2. 修复生产环境前端 API 地址解析逻辑。
+3. 完善项目部署指南，防止开发者踩坑。
+
+### 采用的修改
+1. **API Token 权限补完**：在 `docs/deploy.md` 中明确了 CI/CD 所需的 5 个关键权限（Workers, R2, D1, Account Settings, User Details），解决了部署时的 `10000` 认证错误。
+2. **环境变量规范化**：
+    - 确认为 `VITE_API_BASE_URL` 缺失 `https://` 协议头导致浏览器将其识别为相对路径。
+    - 在 `docs/deploy.md` 中增加了环境变量格式的硬性要求说明。
+3. **部署指南升级**：更新了 `docs/deploy.md`，增加了关于环境变量配置的“正确/错误”示例对比。
+
+### 结果
+- 全栈项目在生产环境（Cloudflare Pages + Workers）成功调通，文件列表加载、新建文件夹等功能恢复正常。
+- 部署指南现在涵盖了从零开始到自动化部署的全链路细节。
+
+### 本次的最佳实践总结
+- **协议头的重要性**：在配置外部 API 地址时，务必包含 `https://` 协议头，否则浏览器和构建工具可能会将其作为相对路径处理。
+- **故障排查思路**：遇到 `405` 或 域名拼接错误时，优先检查 `fetch` 请求的最终 URL 拼接结果。
+- **文档的颗粒度**：对于环境变量这种“牵一发而动全身”的配置，文档应提供显式的正确/错误示例。
+
+### TODO(一些将来可以做的事情)
+- 考虑在前端代码中增加对 `VITE_API_BASE_URL` 的合法性校验提示。
+- 探索 Cloudflare Pages 的预分发部署（Preview Deployments）环境变量同步方案。
