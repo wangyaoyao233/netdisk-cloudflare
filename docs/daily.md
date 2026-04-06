@@ -427,3 +427,27 @@
 ### TODO(一些将来可以做的事情)
 - 在 CI/CD 流程中自动注入生产环境的 API 地址。
 - 考虑使用 Vite 的 `proxy` 配置来进一步简化开发环境下的跨域问题。
+
+## 2026-04-06 14:15 修复 Cloudflare Worker CI/CD 部署权限问题
+
+### 背景
+在 GitHub Actions 自动部署 Worker 时，Wrangler 报错 `Authentication error [code: 10000]`，提示无法访问 `/memberships` 接口。这通常是因为 API Token 权限不足，导致 Wrangler 在尝试自动获取 Account ID 时失败。
+
+### 目标
+解决 CI/CD 部署中断问题，提高部署流程的稳定性和安全性。
+
+### 采用的修改
+1.  **修改 GitHub 工作流**：更新 `.github/workflows/deploy.yml`，在 `wrangler-action` 中显式添加 `accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}`。
+2.  **更新部署文档**：在 `docs/deploy.md` 中补充了关于 `CLOUDFLARE_ACCOUNT_ID` 的配置说明，并提醒用户在 GitHub Secrets 中进行设置。
+
+### 结果
+- 通过显式提供 Account ID，Wrangler 跳过了需要高权限的账户查询步骤（`/memberships`），从而解决了 `10000` 认证错误。
+- 部署流程现在更加健壮，不再依赖 Wrangler 的自动账户探测。
+
+### 本次的最佳实践总结
+- **显式优于隐式**：在 CI/CD 环境中，尽可能显式提供必要的配置参数（如 Account ID），减少工具链的猜测和多余的 API 调用。
+- **权限最小化原则**：通过提供 Account ID，我们可以避免给 API Token 开启“查看所有账户成员关系”的过度权限，符合安全最佳实践。
+
+### TODO(一些将来可以做的事情)
+- 检查并优化前端 Cloudflare Pages 的自动构建配置。
+- 考虑为生产环境 D1 数据库添加自动备份脚本。
