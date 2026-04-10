@@ -81,6 +81,15 @@ export class FileService {
   }
 
   /**
+   * 获取文件预览链接 (Presigned URL, inline)
+   */
+  static async getPreviewUrl(id: string): Promise<DownloadUrlResponse> {
+    const response = await fetch(`${this.API_BASE}/items/${id}/preview`);
+    if (!response.ok) throw new Error('Failed to get preview URL');
+    return response.json();
+  }
+
+  /**
    * 创建文件夹
    */
   static async createFolder(name: string, parentId: string = 'root'): Promise<FileItem> {
