@@ -1,4 +1,4 @@
-import { S3Client, GetObjectCommand, PutObjectCommand, DeleteObjectCommand } from "@aws-sdk/client-s3";
+import { S3Client, GetObjectCommand, PutObjectCommand } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 
 /**
@@ -114,21 +114,40 @@ export default {
 				const id = crypto.randomUUID();
 				const r2Key = `files/${crypto.randomUUID()}`;
 
-				// 记录元数据
+				const client = createS3Client(env);
+
+				// 规范写法：明确锁定 ContentType 到签名中
+				const finalContentType = contentType || 'application/octet-stream';
+				const command = new PutObjectCommand({
+					Bucket: env.BUCKET_NAME,
+					Key: r2Key,
+					ContentType: finalContentType,
+				});
+
+				// 规范写法：生成包含 Content-Type 签名的 URL
+				const uploadUrl = await getSignedUrl(client, command, {
+					expiresIn: 3600
+				});
+
+				return jsonResponse({
+					id,
+					uploadUrl,
+					r2Key,
+					contentType: finalContentType
+				});
+			}
+
+			// 保存文件元数据: POST /api/items (上传成功后调用)
+			if (path === '/api/items' && method === 'POST') {
+				const { id, parentId, name, size, contentType, r2Key } = await request.json() as any;
+				if (!id || !name || !r2Key) return errorResponse('Missing metadata', 400);
+
+				// 记录元数据到数据库
 				await env.DB.prepare(
 					'INSERT INTO items (id, parentId, name, type, size, contentType, r2Key) VALUES (?, ?, ?, ?, ?, ?, ?)'
 				).bind(id, parentId, name, 'file', size, contentType, r2Key).run();
 
-				// 生成预签名 URL
-				const client = createS3Client(env);
-				const command = new PutObjectCommand({
-					Bucket: env.BUCKET_NAME,
-					Key: r2Key,
-					ContentType: contentType,
-				});
-				const uploadUrl = await getSignedUrl(client, command, { expiresIn: 3600 });
-
-				return jsonResponse({ id, uploadUrl, r2Key });
+				return jsonResponse({ id, name, parentId, type: 'file' }, 201);
 			}
 
 			// 获取下载链接: GET /api/items/:id/download
@@ -152,17 +171,16 @@ export default {
 			// 删除项目: DELETE /api/items/:id
 			if (path.startsWith('/api/items/') && method === 'DELETE') {
 				const id = path.split('/')[3];
+				if (!id) return errorResponse('Missing item ID', 400);
+
 				const item = await env.DB.prepare('SELECT type, r2Key FROM items WHERE id = ?').bind(id).first<ItemMetadata>();
 				
 				if (!item) return errorResponse('Item not found', 404);
 
 				// 如果是文件，物理删除 R2 对象
 				if (item.type === 'file' && item.r2Key) {
-					const client = createS3Client(env);
-					await client.send(new DeleteObjectCommand({ 
-						Bucket: env.BUCKET_NAME, 
-						Key: item.r2Key 
-					}));
+					// 最佳实践：Worker 内部操作 R2 建议直接使用绑定，无需 S3 签名凭证
+					await env.MY_BUCKET.delete(item.r2Key);
 				}
 
 				// 删除数据库记录
@@ -175,7 +193,8 @@ export default {
 
 		} catch (error: any) {
 			console.error('Runtime Error:', error);
-			return errorResponse(error.message, 500);
+			// 返回更详细的错误信息便于调试
+			return errorResponse(error.stack || error.message, 500);
 		}
 	},
 } satisfies ExportedHandler<Env>;

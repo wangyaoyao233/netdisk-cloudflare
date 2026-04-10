@@ -14,6 +14,7 @@ export interface UploadUrlResponse {
   id: string;
   uploadUrl: string;
   r2Key: string;
+  contentType: string;
 }
 
 export interface DownloadUrlResponse {
@@ -51,6 +52,26 @@ export class FileService {
   }
 
   /**
+   * 在上传 R2 成功后，保存元数据到数据库
+   */
+  static async createFileRecord(metadata: {
+    id: string;
+    parentId: string;
+    name: string;
+    size: number;
+    contentType: string;
+    r2Key: string;
+  }): Promise<FileItem> {
+    const response = await fetch(`${this.API_BASE}/items`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(metadata)
+    });
+    if (!response.ok) throw new Error('Failed to create file record');
+    return response.json();
+  }
+
+  /**
    * 获取文件下载链接 (Presigned URL)
    */
   static async getDownloadUrl(id: string): Promise<DownloadUrlResponse> {
@@ -75,12 +96,13 @@ export class FileService {
   /**
    * 执行真实的文件上传 (上传到 R2)
    */
-  static async uploadToR2(url: string, file: File): Promise<void> {
+  static async uploadToR2(url: string, file: File, contentType?: string): Promise<void> {
     const response = await fetch(url, {
       method: 'PUT',
       body: file,
       headers: {
-        'Content-Type': file.type,
+        // 关键：必须与后端签名时的 Content-Type 严格一致
+        'Content-Type': contentType || file.type || 'application/octet-stream',
       },
     });
     if (!response.ok) throw new Error('Failed to upload to R2');
