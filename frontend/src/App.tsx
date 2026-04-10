@@ -59,12 +59,24 @@ function App() {
     setUploading(true);
     try {
       // 1. 获取预签名 URL
-      const { uploadUrl } = await FileService.getUploadUrl(file.name, file.size, file.type, currentParentId);
+      // 后端现在会返回它用来签名的 contentType
+      const { id, uploadUrl, r2Key, contentType } = await FileService.getUploadUrl(file.name, file.size, file.type, currentParentId);
       
       // 2. 上传到 R2
-      await FileService.uploadToR2(uploadUrl, file);
+      // 必须传递签名时使用的 contentType
+      await FileService.uploadToR2(uploadUrl, file, contentType);
       
-      // 3. 刷新列表
+      // 3. 上传成功后，通知后端保存元数据到 D1
+      await FileService.createFileRecord({
+        id,
+        parentId: currentParentId,
+        name: file.name,
+        size: file.size,
+        contentType: contentType || file.type,
+        r2Key
+      });
+      
+      // 4. 刷新列表
       fetchFiles(currentParentId);
     } catch (error) {
       console.error('Upload failed:', error);
@@ -328,7 +340,7 @@ function App() {
                             </button>
                           )}
                           <button 
-                            onClick={() => handleDelete(file.id)}
+                            onClick={(e) => { e.stopPropagation(); handleDelete(file.id); }}
                             className="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-all" title="Delete"
                           >
                             <X className="w-4 h-4" />
