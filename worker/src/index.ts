@@ -54,13 +54,13 @@ function createS3Client(env: Env) {
 /**
  * 统一响应辅助函数
  */
-const jsonResponse = (data: any, status = 200) => 
-	new Response(JSON.stringify(data), { 
-		status, 
-		headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' } 
+const jsonResponse = (data: any, status = 200) =>
+	new Response(JSON.stringify(data), {
+		status,
+		headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' }
 	});
 
-const errorResponse = (message: string, status = 500) => 
+const errorResponse = (message: string, status = 500) =>
 	new Response(message, { status, headers: CORS_HEADERS });
 
 export default {
@@ -154,7 +154,7 @@ export default {
 			if (path.startsWith('/api/items/') && path.endsWith('/download') && method === 'GET') {
 				const id = path.split('/')[3];
 				const item = await env.DB.prepare('SELECT r2Key, name FROM items WHERE id = ?').bind(id).first<ItemMetadata>();
-				
+
 				if (!item || !item.r2Key) return errorResponse('File not found', 404);
 
 				const client = createS3Client(env);
@@ -164,7 +164,26 @@ export default {
 					ResponseContentDisposition: `attachment; filename="${encodeURIComponent(item.name)}"`
 				});
 				const url = await getSignedUrl(client, command, { expiresIn: 3600 });
-				
+
+				return jsonResponse({ url });
+			}
+
+			// 获取预览链接: GET /api/items/:id/preview
+			if (path.startsWith('/api/items/') && path.endsWith('/preview') && method === 'GET') {
+				const id = path.split('/')[3];
+				const item = await env.DB.prepare('SELECT r2Key, name, contentType FROM items WHERE id = ?').bind(id).first<ItemMetadata>();
+
+				if (!item || !item.r2Key) return errorResponse('File not found', 404);
+
+				const client = createS3Client(env);
+				const command = new GetObjectCommand({
+					Bucket: env.BUCKET_NAME,
+					Key: item.r2Key,
+					ResponseContentDisposition: 'inline',
+					ResponseContentType: item.contentType
+				});
+				const url = await getSignedUrl(client, command, { expiresIn: 3600 });
+
 				return jsonResponse({ url });
 			}
 
@@ -174,7 +193,7 @@ export default {
 				if (!id) return errorResponse('Missing item ID', 400);
 
 				const item = await env.DB.prepare('SELECT type, r2Key FROM items WHERE id = ?').bind(id).first<ItemMetadata>();
-				
+
 				if (!item) return errorResponse('Item not found', 404);
 
 				// 如果是文件，物理删除 R2 对象
@@ -185,7 +204,7 @@ export default {
 
 				// 删除数据库记录
 				await env.DB.prepare('DELETE FROM items WHERE id = ?').bind(id).run();
-				
+
 				return new Response(null, { status: 204, headers: CORS_HEADERS });
 			}
 

@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from 'react'
-import { Upload, Download, File as FileIcon, X, HardDrive, Search, Plus, FileText, Image as ImageIcon, Archive, MoreVertical, ChevronRight, Folder } from 'lucide-react'
+import { Upload, Download, File as FileIcon, X, HardDrive, Search, Plus, FileText, Image as ImageIcon, Archive, MoreVertical, ChevronRight, Folder, Eye } from 'lucide-react'
 import { FileService, type FileItem } from './api/fileService'
 
 function App() {
@@ -9,6 +9,7 @@ function App() {
   const [files, setFiles] = useState<FileItem[]>([]);
   const [currentParentId, setCurrentParentId] = useState<string>('root');
   const [pathStack, setPathStack] = useState<{id: string, name: string}[]>([]);
+  const [previewFile, setPreviewFile] = useState<{url: string, name: string} | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // 初始化加载文件列表
@@ -65,7 +66,7 @@ function App() {
       // 2. 上传到 R2
       // 必须传递签名时使用的 contentType
       await FileService.uploadToR2(uploadUrl, file, contentType);
-      
+
       // 3. 上传成功后，通知后端保存元数据到 D1
       await FileService.createFileRecord({
         id,
@@ -108,6 +109,25 @@ function App() {
       document.body.removeChild(link);
     } catch (error) {
       console.error('Download failed:', error);
+    }
+  };
+
+  const handlePreview = async (file: FileItem) => {
+    if (file.type === 'folder') {
+      handleEnterFolder(file);
+      return;
+    }
+    
+    const isImage = (file.contentType || '').startsWith('image/');
+    if (isImage) {
+      try {
+        const { url } = await FileService.getPreviewUrl(file.id);
+        setPreviewFile({ url, name: file.name });
+      } catch (error) {
+        console.error('Preview failed:', error);
+      }
+    } else {
+      handleDownload(file);
     }
   };
 
@@ -172,6 +192,34 @@ function App() {
           <p className="mt-2 text-indigo-100 text-lg text-center">
             Files will be uploaded to <strong>{pathStack.length > 0 ? pathStack[pathStack.length-1].name : 'Root'}</strong>
           </p>
+        </div>
+      )}
+
+      {/* Image Preview Modal */}
+      {previewFile && (
+        <div 
+          className="fixed inset-0 z-[60] bg-slate-900/90 backdrop-blur-md flex items-center justify-center p-4 sm:p-10"
+          onClick={() => setPreviewFile(null)}
+        >
+          <button 
+            className="absolute top-6 right-6 p-3 bg-white/10 hover:bg-white/20 text-white rounded-full transition-all"
+            onClick={() => setPreviewFile(null)}
+          >
+            <X className="w-6 h-6" />
+          </button>
+          <div 
+            className="relative max-w-full max-h-full flex flex-col items-center gap-4"
+            onClick={e => e.stopPropagation()}
+          >
+            <img 
+              src={previewFile.url} 
+              alt={previewFile.name} 
+              className="max-w-full max-h-[80vh] rounded-lg shadow-2xl object-contain bg-white/5"
+            />
+            <div className="bg-white/10 backdrop-blur-md px-6 py-3 rounded-full border border-white/10">
+              <p className="text-white font-medium text-sm">{previewFile.name}</p>
+            </div>
+          </div>
         </div>
       )}
 
@@ -309,8 +357,9 @@ function App() {
                   ) : files.map((file) => (
                     <tr 
                       key={file.id} 
+                      onClick={() => handlePreview(file)}
                       onDoubleClick={() => handleEnterFolder(file)}
-                      className={`hover:bg-slate-50/80 transition-all group cursor-default ${file.type === 'folder' ? 'cursor-pointer' : ''}`}
+                      className="hover:bg-slate-50/80 transition-all group cursor-pointer"
                     >
                       <td className="px-8 py-5">
                         <div className="flex items-center gap-4">
@@ -332,12 +381,20 @@ function App() {
                       <td className="px-8 py-5 text-right">
                         <div className="flex items-center justify-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
                           {file.type === 'file' && (
-                            <button 
-                              onClick={() => handleDownload(file)}
-                              className="p-2 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-all" title="Download"
-                            >
-                              <Download className="w-4 h-4" />
-                            </button>
+                            <>
+                              <button 
+                                onClick={(e) => { e.stopPropagation(); handlePreview(file); }}
+                                className="p-2 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-all" title="Preview"
+                              >
+                                <Eye className="w-4 h-4" />
+                              </button>
+                              <button 
+                                onClick={(e) => { e.stopPropagation(); handleDownload(file); }}
+                                className="p-2 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-all" title="Download"
+                              >
+                                <Download className="w-4 h-4" />
+                              </button>
+                            </>
                           )}
                           <button 
                             onClick={(e) => { e.stopPropagation(); handleDelete(file.id); }}
@@ -345,7 +402,7 @@ function App() {
                           >
                             <X className="w-4 h-4" />
                           </button>
-                          <button className="p-2 text-slate-400 hover:bg-slate-100 rounded-lg transition-all">
+                          <button className="p-2 text-slate-400 hover:bg-slate-100 rounded-lg transition-all" onClick={e => e.stopPropagation()}>
                             <MoreVertical className="w-4 h-4" />
                           </button>
                         </div>
