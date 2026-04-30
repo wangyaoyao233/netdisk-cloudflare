@@ -1,6 +1,46 @@
 import { useState, useRef, useEffect } from 'react'
+import type { ReactNode } from 'react'
 import { Upload, Download, File as FileIcon, X, HardDrive, Search, Plus, FileText, Image as ImageIcon, Archive, MoreVertical, ChevronRight, Folder, Eye, Video, PlayCircle, RefreshCw } from 'lucide-react'
 import { FileService, type FileItem } from './api/fileService'
+
+function FileThumbnail({ file, fallbackIcon }: { file: FileItem; fallbackIcon: ReactNode }) {
+  const [failed, setFailed] = useState(false);
+  const isImage = (file.contentType || '').startsWith('image/');
+  const isVideo = file.mediaType === 'video' || (file.contentType || '').startsWith('video/');
+  const canShowThumbnail = file.type === 'file' && !failed && (isImage || (isVideo && file.videoStatus === 'completed' && file.thumbnailPath));
+
+  if (canShowThumbnail) {
+    return (
+      <div className="relative w-14 h-14 shrink-0 overflow-hidden rounded-xl bg-slate-100 ring-1 ring-slate-200/70">
+        <img
+          src={FileService.getThumbnailUrl(file.id)}
+          alt=""
+          loading="lazy"
+          className="h-full w-full object-cover"
+          onError={() => setFailed(true)}
+        />
+        {isVideo && (
+          <div className="absolute inset-0 flex items-center justify-center bg-slate-950/10">
+            <div className="flex h-7 w-7 items-center justify-center rounded-full bg-white/90 text-emerald-600 shadow-sm">
+              <PlayCircle className="h-4 w-4" />
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  return (
+    <div className="relative flex w-14 h-14 shrink-0 items-center justify-center rounded-xl bg-slate-50 text-slate-400 ring-1 ring-slate-200/70 transition-colors group-hover:bg-white group-hover:shadow-sm">
+      {fallbackIcon}
+      {isVideo && file.videoStatus && file.videoStatus !== 'completed' && (
+        <span className={`absolute -bottom-1 -right-1 h-3 w-3 rounded-full border-2 border-white ${
+          file.videoStatus === 'failed' ? 'bg-red-500' : 'bg-amber-400'
+        }`} />
+      )}
+    </div>
+  );
+}
 
 function App() {
   const [dragActive, setDragActive] = useState(false);
@@ -466,9 +506,7 @@ function App() {
                     >
                       <td className="px-8 py-5">
                         <div className="flex items-center gap-4">
-                          <div className="bg-slate-50 p-2.5 rounded-xl transition-colors group-hover:bg-white group-hover:shadow-sm">
-                            {getFileIcon(file)}
-                          </div>
+                          <FileThumbnail file={file} fallbackIcon={getFileIcon(file)} />
                           <div className="min-w-0">
                             <p className="font-semibold text-slate-700 text-sm group-hover:text-indigo-600 transition-colors truncate">{file.name}</p>
                             <div className="flex flex-wrap items-center gap-2">
