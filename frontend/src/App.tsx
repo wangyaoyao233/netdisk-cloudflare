@@ -10,14 +10,16 @@ import { ImagePreviewModal } from './components/modals/ImagePreviewModal'
 import { VideoPlayerModal } from './components/modals/VideoPlayerModal'
 import { useHlsVideo } from './hooks/useHlsVideo'
 import { isImageFile, isVideoFile } from './utils/fileMedia'
+import { readFolderLocationFromUrl, writeFolderLocationToUrl, type FolderPathItem } from './utils/navigationState'
 
 function App() {
+  const initialLocation = readFolderLocationFromUrl();
   const [dragActive, setDragActive] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [loading, setLoading] = useState(true);
   const [files, setFiles] = useState<FileItem[]>([]);
-  const [currentParentId, setCurrentParentId] = useState<string>('root');
-  const [pathStack, setPathStack] = useState<{id: string, name: string}[]>([]);
+  const [currentParentId, setCurrentParentId] = useState<string>(initialLocation.currentParentId);
+  const [pathStack, setPathStack] = useState<FolderPathItem[]>(initialLocation.pathStack);
   const [previewFile, setPreviewFile] = useState<{url: string, name: string} | null>(null);
   const [videoFile, setVideoFile] = useState<FileItem | null>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -28,6 +30,17 @@ function App() {
   useEffect(() => {
     fetchFiles(currentParentId);
   }, [currentParentId]);
+
+  useEffect(() => {
+    const handlePopState = () => {
+      const nextLocation = readFolderLocationFromUrl();
+      setCurrentParentId(nextLocation.currentParentId);
+      setPathStack(nextLocation.pathStack);
+    };
+
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
+  }, []);
 
   const fetchFiles = async (parentId: string) => {
     setLoading(true);
@@ -163,16 +176,20 @@ function App() {
 
   const handleEnterFolder = (folder: FileItem) => {
     if (folder.type !== 'folder') return;
-    setPathStack(prev => [...prev, { id: folder.id, name: folder.name }]);
+    const nextPathStack = [...pathStack, { id: folder.id, name: folder.name }];
+    writeFolderLocationToUrl({ currentParentId: folder.id, pathStack: nextPathStack });
+    setPathStack(nextPathStack);
     setCurrentParentId(folder.id);
   };
 
   const handleNavigateBack = (index: number) => {
     if (index === -1) {
+      writeFolderLocationToUrl({ currentParentId: 'root', pathStack: [] });
       setPathStack([]);
       setCurrentParentId('root');
     } else {
       const newStack = pathStack.slice(0, index + 1);
+      writeFolderLocationToUrl({ currentParentId: newStack[newStack.length - 1].id, pathStack: newStack });
       setPathStack(newStack);
       setCurrentParentId(newStack[newStack.length - 1].id);
     }
