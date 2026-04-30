@@ -15,6 +15,8 @@ transcoder 本地常驻运行
 
 无任务时服务会等待一段时间继续轮询；有任务时会自动处理。
 
+空闲状态不会每轮都写日志。当前实现会对 `No pending media job` 做限频，默认最多约每 10 分钟输出一次，避免长期运行时日志快速增长。
+
 ## 2. 运行模式
 
 `transcoder` 始终在 Mac Mini 本地运行。脚本名中的 `remote` 表示连接远程 Worker，而不是把 transcoder 部署到远程服务器。
@@ -75,8 +77,8 @@ TRANSCODER_IDLE_INTERVAL_MS=10000
 TRANSCODER_ERROR_INTERVAL_MS=30000
 TRANSCODER_TEMP_DIR=.tmp
 TRANSCODER_KEEP_WORKDIR=false
-FFMPEG_PATH=ffmpeg
-FFPROBE_PATH=ffprobe
+FFMPEG_PATH=/opt/homebrew/bin/ffmpeg
+FFPROBE_PATH=/opt/homebrew/bin/ffprobe
 HLS_TIME_SECONDS=10
 THUMBNAIL_OFFSET_SECONDS=1
 R2_ACCOUNT_ID=your-account-id
@@ -99,8 +101,8 @@ TRANSCODER_IDLE_INTERVAL_MS=10000
 TRANSCODER_ERROR_INTERVAL_MS=30000
 TRANSCODER_TEMP_DIR=.tmp
 TRANSCODER_KEEP_WORKDIR=false
-FFMPEG_PATH=ffmpeg
-FFPROBE_PATH=ffprobe
+FFMPEG_PATH=/opt/homebrew/bin/ffmpeg
+FFPROBE_PATH=/opt/homebrew/bin/ffprobe
 HLS_TIME_SECONDS=10
 THUMBNAIL_OFFSET_SECONDS=1
 R2_ACCOUNT_ID=your-account-id
@@ -188,6 +190,8 @@ nano ~/Library/LaunchAgents/com.cloudnet.transcoder.plist
 
 如果你的 `npm` 路径不同，把 `ProgramArguments` 中的第一项改成 `which npm` 的实际输出。
 
+`launchd` 启动的进程不会继承你终端里的完整 `PATH`。因此 `FFMPEG_PATH` 和 `FFPROBE_PATH` 建议使用 `which ffmpeg`、`which ffprobe` 输出的绝对路径，例如 `/opt/homebrew/bin/ffmpeg` 和 `/opt/homebrew/bin/ffprobe`。否则可能出现 `spawn ffprobe ENOENT`。
+
 ### 6.3 启动服务
 
 ```bash
@@ -206,8 +210,10 @@ tail -f /tmp/cloudnet-transcoder.err.log
 
 ```text
 [INFO] Transcoder service started
-[INFO] No pending media job
+[INFO] No pending media job {"idleClaims":1,"nextPollInMs":10000}
 ```
+
+空闲日志默认会限频输出；任务开始、完成、失败和轮询错误仍会立即记录。
 
 ### 6.5 停止服务
 

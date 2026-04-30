@@ -99,6 +99,21 @@ function detectVideoStreamContentType(fileName: string): string {
 	return 'application/octet-stream';
 }
 
+async function deleteR2Prefix(bucket: R2Bucket, prefix: string): Promise<void> {
+	let cursor: string | undefined;
+
+	do {
+		const listed = await bucket.list({ prefix, cursor });
+		const keys = listed.objects.map((object) => object.key);
+
+		if (keys.length > 0) {
+			await bucket.delete(keys);
+		}
+
+		cursor = listed.truncated ? listed.cursor : undefined;
+	} while (cursor);
+}
+
 export default {
 	async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
 		const url = new URL(request.url);
@@ -375,15 +390,30 @@ export default {
 				const id = path.split('/')[3];
 				if (!id) return errorResponse('Missing item ID', 400);
 
-				const item = await env.DB.prepare('SELECT type, r2Key FROM items WHERE id = ?').bind(id).first<ItemMetadata>();
+				const item = await env.DB.prepare(
+					'SELECT type, r2Key, mediaType, videoStatus, hlsPath, thumbnailPath FROM items WHERE id = ?'
+				).bind(id).first<ItemMetadata>();
 
 				if (!item) return errorResponse('Item not found', 404);
+				if (item.mediaType === 'video' && item.videoStatus === 'processing') {
+					return errorResponse('Video is processing', 409);
+				}
 
 				// 如果是文件，物理删除 R2 对象
 				if (item.type === 'file' && item.r2Key) {
 					// 最佳实践：Worker 内部操作 R2 建议直接使用绑定，无需 S3 签名凭证
 					await env.MY_BUCKET.delete(item.r2Key);
 				}
+
+				if (item.type === 'file' && item.mediaType === 'video') {
+					await deleteR2Prefix(env.MY_BUCKET, `hls/${id}/`);
+
+					if (item.thumbnailPath) {
+						await env.MY_BUCKET.delete(item.thumbnailPath);
+					}
+				}
+
+				await env.DB.prepare('DELETE FROM media_jobs WHERE itemId = ?').bind(id).run();
 
 				// 删除数据库记录
 				await env.DB.prepare('DELETE FROM items WHERE id = ?').bind(id).run();

@@ -986,3 +986,89 @@ Mac Mini 上部署和维护本地转码服务有了明确操作手册，后续�
 ### TODO(如果需要的话，一些将来可以做的事情)
 
 - 后续可以补充一个 launchd plist 模板文件，减少手工复制配置时的路径错误。
+
+## 2026-04-30 限频 Transcoder 空闲日志
+### 背景
+
+`transcoder` 作为 Mac Mini 上的常驻服务，会长期轮询 Worker。原实现每次无任务都会输出 `No pending media job`，在长期空闲时会导致日志文件持续增长。
+
+### 目标
+
+减少无任务轮询时的重复日志，保留启动、任务处理、任务完成、失败和异常等关键事件日志。
+
+### 采用的修改
+
+1. 在 `TranscoderService` 中增加空闲日志限频逻辑。
+2. `No pending media job` 默认最多约每 10 分钟输出一次，并附带空闲 claim 次数和下一次轮询间隔。
+3. 领取到任务时重置连续空闲计数。
+4. 更新 `docs/transcoder.md`，说明空闲日志已限频，以及日志中正常空闲状态的示例。
+
+### 结果
+
+- `npm run build --workspace=transcoder` 通过。
+- 常驻运行时日志增长速度显著降低，同时关键事件仍会被记录。
+
+### 本次的最佳实践总结
+
+常驻后台服务不应为正常空闲状态高频写日志。对重复状态做限频，既能保留运维可见性，也能避免日志文件无意义膨胀。
+
+### TODO(如果需要的话，一些将来可以做的事情)
+
+- 如果后续需要更严格的日志管理，可以增加文件日志轮转配置或将日志输出改为结构化日志系统。
+
+## 2026-04-30 修复视频文件删除清理不完整问题
+### 背景
+
+原删除接口只删除文件的原始 `r2Key` 和 `items` 记录。对于视频文件，尤其是转码失败但已经产生部分 HLS 或缩略图产物的情况，可能留下 R2 残留对象和 `media_jobs` 任务记录。
+
+### 目标
+
+让视频文件删除同时清理原片、HLS 产物、缩略图和任务记录，并避免删除正在转码中的文件造成竞态。
+
+### 采用的修改
+
+1. Worker 删除接口查询视频相关字段，包括 `mediaType`、`videoStatus`、`hlsPath` 和 `thumbnailPath`。
+2. 如果视频仍处于 `processing`，返回 `409 Video is processing`。
+3. 删除视频时清理 `hls/{itemId}/` 前缀下的所有 R2 对象。
+4. 删除 `thumbnailPath` 对应缩略图，并显式删除 `media_jobs` 记录。
+5. 更新视频架构、数据库和部署文档中的删除行为说明。
+
+### 结果
+
+- `npx tsc -p worker/tsconfig.json --noEmit` 通过。
+- `npm run test --workspace=worker` 通过。
+- 失败或完成的视频文件删除现在会清理关联转码产物和任务记录。
+
+### 本次的最佳实践总结
+
+删除业务实体时不能只删除主表和原始对象，还要清理异步任务产生的派生产物；对正在处理中的任务应显式拒绝删除或先取消任务，避免后台进程继续写入导致孤儿数据。
+
+### TODO(如果需要的话，一些将来可以做的事情)
+
+- 后续可以增加“取消 processing 任务”的接口，让用户不必等待当前转码自然结束后再删除。
+
+## 2026-04-30 修复 launchd 下 ffprobe 路径问题
+### 背景
+
+Mac Mini 上通过 `launchd` 常驻运行 transcoder 时，日志出现 `spawn ffprobe ENOENT`。这是因为 `launchd` 启动的进程不会继承终端中的完整 `PATH`，导致配置为 `ffprobe` 的命令无法被找到。
+
+### 目标
+
+让后台运行的 transcoder 能稳定找到 FFmpeg 和 FFprobe，避免视频任务因命令路径缺失失败。
+
+### 采用的修改
+
+1. 将 `transcoder/.dev.vars` 和 `transcoder/.env.remote.local` 中的 `FFMPEG_PATH`、`FFPROBE_PATH` 改成本机绝对路径。
+2. 更新 `docs/transcoder.md`，说明 `launchd` 场景下应使用 `which ffmpeg` 和 `which ffprobe` 的绝对路径。
+
+### 结果
+
+后台服务重启后会使用 `/opt/homebrew/bin/ffmpeg` 和 `/opt/homebrew/bin/ffprobe`，避免 `spawn ffprobe ENOENT`。
+
+### 本次的最佳实践总结
+
+常驻服务不要依赖交互式 shell 的 `PATH`。对 `launchd`、systemd、cron 等后台执行环境，应在配置中使用关键外部命令的绝对路径。
+
+### TODO(如果需要的话，一些将来可以做的事情)
+
+- 可以在 transcoder 启动时主动检查 FFmpeg/FFprobe 是否存在，提前给出更明确的启动错误。
