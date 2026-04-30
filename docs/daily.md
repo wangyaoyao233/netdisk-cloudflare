@@ -1103,3 +1103,36 @@ Mac Mini 上通过 `launchd` 常驻运行 transcoder 时，日志出现 `spawn f
 ### TODO(如果需要的话，一些将来可以做的事情)
 
 - 后续可以为图片文件生成独立小尺寸缩略图，避免列表直接加载大原图。
+
+## 2026-04-30 重构前端组件结构
+### 背景
+
+前端主要界面逻辑集中在 `App.tsx`，文件列表、缩略图、弹窗、面包屑、页头页脚和 HLS 播放副作用都混在同一个组件里。随着缩略图和视频播放能力增加，单文件维护成本变高。
+
+### 目标
+
+按职责拆分前端组件，让 `App.tsx` 保持页面状态与业务动作编排，展示组件、媒体判断和播放副作用分别放到更明确的位置。
+
+### 采用的修改
+
+1. 新增 `components/layout/`，拆出 `AppHeader` 和 `AppFooter`。
+2. 新增 `components/modals/`，拆出图片预览和视频播放弹窗。
+3. 新增 `components/file-browser/`，拆出文件浏览表格和缩略图组件。
+4. 新增 `components/Breadcrumbs.tsx` 和 `components/DragUploadOverlay.tsx`，承接独立 UI 区块。
+5. 新增 `hooks/useHlsVideo.ts`，隔离 HLS 初始化、销毁和 Safari 原生 HLS 判断。
+6. 新增 `utils/fileMedia.tsx`，统一图片/视频判断、文件图标和视频状态文案。
+7. `App.tsx` 缩减为状态管理、API 调用和组件编排，不再直接维护大段表格与弹窗 JSX。
+
+### 结果
+
+- `npm run build --workspace=frontend` 通过。
+- `npm run lint --workspace=frontend` 通过。
+- 前端行为保持不变，但组件边界更清晰，后续修改文件列表、弹窗或播放逻辑时可以定位到更小的文件。
+
+### 本次的最佳实践总结
+
+前端页面组件应优先保留业务状态和流程编排，把可复用或复杂的展示结构拆到组件，把副作用拆到 hook，把纯判断逻辑拆到工具函数。这样既不会过早引入重型状态管理，也能避免单个页面文件不断膨胀。
+
+### TODO(如果需要的话，一些将来可以做的事情)
+
+- 后续可以继续把上传、下载、删除等文件操作封装成 `useFileBrowser` hook，并为文件浏览组件补充组件级测试。
