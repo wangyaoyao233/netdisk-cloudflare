@@ -15,7 +15,7 @@ transcoder 本地常驻运行
 
 无任务时服务会等待一段时间继续轮询；有任务时会自动处理。
 
-服务启动时会输出一条 `Transcoder service started and polling` 日志，用于确认进程已启动并开始轮询。
+服务启动时会输出一条 `Transcoder service started and polling` 日志，用于确认进程已启动并开始轮询。Transcoder 只写 stdout/stderr，日志文件由 launchd 的 `StandardOutPath` 和 `StandardErrorPath` 管理。
 
 空闲状态默认不输出 `No pending media job` 日志，避免长期运行时日志文件持续增长。如需观察轮询健康状态，可通过 `TRANSCODER_IDLE_LOG_INTERVAL_MS` 设置空闲日志输出间隔。
 
@@ -211,6 +211,8 @@ tail -f /tmp/cloudnet-transcoder.err.log
 ```
 
 服务启动后会立即输出 `Transcoder service started and polling`。默认空闲时不会继续输出日志；任务开始、完成、失败和轮询错误会立即记录。
+
+当前示例暂时沿用 `/tmp`，以便和本机其他 LaunchAgent 日志路径保持一致。更长期的做法是把 `StandardOutPath` 和 `StandardErrorPath` 改到 `~/Library/Logs/`，并配合日志轮转。修改 `StandardOutPath` 或 `StandardErrorPath` 后需要重启 LaunchAgent。
 
 如需临时观察空闲轮询状态，可以设置 `TRANSCODER_IDLE_LOG_INTERVAL_MS` 为大于 0 的毫秒数，例如每 1 小时输出一次：
 

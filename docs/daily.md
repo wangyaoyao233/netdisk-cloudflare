@@ -1284,3 +1284,33 @@ Transcoder 长期后台运行时，空闲轮询日志即使做了限频，对常
 ### TODO(如果需要的话，一些将来可以做的事情)
 
 - 后续可以为启动日志补充版本号或 git commit，方便排查后台服务是否运行了最新构建。
+
+## 2026-05-01 恢复 Transcoder stdout/stderr 日志方案
+### 背景
+
+此前尝试让 Transcoder 应用自身直接写入项目内日志文件，但这会让应用承担日志落盘职责，不符合“应用输出 stdout/stderr，由运行器管理日志文件”的长期维护方式。
+
+### 目标
+
+恢复为 Transcoder 只写 stdout/stderr，日志文件路径交给 launchd 的 `StandardOutPath` 和 `StandardErrorPath` 管理；当前为了和本机其他 plist 保持一致，日志路径暂时继续使用 `/tmp`。
+
+### 采用的修改
+
+1. 移除 `logger` 中的应用内文件追加写入逻辑。
+2. 移除 `TRANSCODER_LOG_DIR` 示例配置和启动日志中的 `logFilePath` 字段。
+3. 将文档中的日志查看方式恢复为 `/tmp/cloudnet-transcoder.out.log` 和 `/tmp/cloudnet-transcoder.err.log`。
+4. 将当前实际使用的 `backendjob.cloudnet-transcoder.nodejs.plist` 日志路径改回 `/tmp` 并重启服务。
+
+### 结果
+
+- Transcoder 后台服务已恢复 running。
+- 启动日志已写入 `/tmp/cloudnet-transcoder.out.log`。
+- 应用日志职责回到 stdout/stderr，launchd 负责文件重定向。
+
+### 本次的最佳实践总结
+
+应用进程优先只负责输出结构化、可读的 stdout/stderr；日志文件路径、保留位置和轮转策略应由运行环境管理。临时沿用 `/tmp` 可以保持本机配置一致，但长期仍应迁移到更稳定的日志目录。
+
+### TODO(如果需要的话，一些将来可以做的事情)
+
+- 后续统一梳理所有 LaunchAgent 的日志路径，再一起从 `/tmp` 迁移到 `~/Library/Logs/` 并配置轮转。
