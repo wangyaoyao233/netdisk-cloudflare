@@ -222,6 +222,20 @@ Webhook 未来可以作为“加速唤醒”补充，但不应作为第一版的
 - 正确设置 `Content-Type`
 - 后续可以无缝接入鉴权和缓存控制
 
+### 6. 删除视频文件
+
+`DELETE /api/items/:id`
+
+视频文件删除需要同时清理：
+
+- 原始 R2 对象：`items.r2Key`
+- HLS 产物前缀：`hls/{fileId}/`
+- 缩略图：`items.thumbnailPath`
+- 任务记录：`media_jobs`
+- 文件元数据：`items`
+
+如果视频仍处于 `processing`，Worker 返回 `409`，避免本地转码进程正在写入产物时被删除造成竞态和孤儿对象。
+
 ## 播放策略
 
 第一版播放器策略保持简单：

@@ -10,6 +10,10 @@ import { VideoProcessor } from "./video-processor.js";
 import { WorkerClient } from "./worker-client.js";
 
 export class TranscoderService {
+  private static readonly idleLogIntervalMs = 10 * 60 * 1000;
+  private lastIdleLogAt = 0;
+  private consecutiveIdleClaims = 0;
+
   constructor(
     private readonly config: AppConfig,
     private readonly workerClient: WorkerClient,
@@ -28,11 +32,12 @@ export class TranscoderService {
       try {
         const job = await this.workerClient.claimJob();
         if (!job) {
-          logger.info("No pending media job");
+          this.logIdleIfNeeded();
           await sleep(this.config.idleIntervalMs);
           continue;
         }
 
+        this.consecutiveIdleClaims = 0;
         await this.handleJob(job);
         await sleep(this.config.pollIntervalMs);
       } catch (error) {
@@ -41,6 +46,21 @@ export class TranscoderService {
         await sleep(this.config.errorIntervalMs);
       }
     }
+  }
+
+  private logIdleIfNeeded(): void {
+    this.consecutiveIdleClaims += 1;
+
+    const now = Date.now();
+    if (now - this.lastIdleLogAt < TranscoderService.idleLogIntervalMs) {
+      return;
+    }
+
+    this.lastIdleLogAt = now;
+    logger.info("No pending media job", {
+      idleClaims: this.consecutiveIdleClaims,
+      nextPollInMs: this.config.idleIntervalMs,
+    });
   }
 
   private async handleJob(job: ClaimJobResponse): Promise<void> {

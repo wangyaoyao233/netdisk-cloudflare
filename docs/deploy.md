@@ -335,3 +335,14 @@ Worker 当前对 API 和 HLS 代理返回 CORS 头。前端 `VITE_API_BASE_URL` 
 - R2 是否存在 `hls/{itemId}/index.m3u8` 和 segment 文件。
 - `items.hlsPath` 是否为 `hls/{itemId}/index.m3u8`。
 - Worker 是否已部署包含 HLS 代理接口的最新版本。
+
+### 删除视频后仍看到残留对象
+
+当前 Worker 删除视频时会清理：
+
+- 原始文件 `items.r2Key`
+- HLS 前缀 `hls/{itemId}/`
+- 缩略图 `items.thumbnailPath`
+- `media_jobs` 任务记录
+
+如果删除时返回 `409 Video is processing`，说明本地 transcoder 正在处理该视频。等待任务完成或失败后再删除，避免产生转码写入竞态。

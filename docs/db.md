@@ -157,6 +157,8 @@ GET /api/video/stream/:fileId/index.m3u8
 GET /api/video/stream/:fileId/:segmentName
 ```
 
+删除视频文件时，Worker 会清理原始文件、`hls/{itemId}/` 前缀下的 HLS 产物、`thumbnailPath` 对应缩略图，并显式删除 `media_jobs` 任务记录。处于 `processing` 的视频会拒绝删除，避免与本地转码写入发生竞态。
+
 ## 6. 核心设计思路
 
 ### 6.1 逻辑与物理解耦
