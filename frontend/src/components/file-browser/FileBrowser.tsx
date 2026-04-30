@@ -1,5 +1,6 @@
 import { Download, Eye, Folder, MoreVertical, PlayCircle, Plus, RefreshCw, Search, Upload, X } from 'lucide-react'
-import type { ChangeEvent, RefObject } from 'react'
+import { useRef } from 'react'
+import type { ChangeEvent, PointerEvent, RefObject } from 'react'
 import { FileService, type FileItem } from '../../api/fileService'
 import { getFileIcon, getVideoStatusLabel } from '../../utils/fileMedia'
 import { FileThumbnail } from './FileThumbnail'
@@ -35,6 +36,50 @@ export function FileBrowser({
   onDownload,
   onDelete,
 }: FileBrowserProps) {
+  const pointerStartRef = useRef<{ x: number; y: number } | null>(null);
+  const didDragRef = useRef(false);
+  const dragThreshold = 6;
+
+  const handleRowPointerDown = (event: PointerEvent<HTMLTableRowElement>) => {
+    pointerStartRef.current = { x: event.clientX, y: event.clientY };
+    didDragRef.current = false;
+  };
+
+  const handleRowPointerMove = (event: PointerEvent<HTMLTableRowElement>) => {
+    if (!pointerStartRef.current) return;
+
+    const deltaX = Math.abs(event.clientX - pointerStartRef.current.x);
+    const deltaY = Math.abs(event.clientY - pointerStartRef.current.y);
+    if (deltaX > dragThreshold || deltaY > dragThreshold) {
+      didDragRef.current = true;
+    }
+  };
+
+  const handleRowClick = (file: FileItem) => {
+    if (didDragRef.current) {
+      pointerStartRef.current = null;
+      didDragRef.current = false;
+      return;
+    }
+
+    onPreview(file);
+  };
+
+  const handleRowDoubleClick = (file: FileItem) => {
+    if (didDragRef.current) return;
+    onEnterFolder(file);
+  };
+
+  const handleParentRowClick = () => {
+    if (didDragRef.current) {
+      pointerStartRef.current = null;
+      didDragRef.current = false;
+      return;
+    }
+
+    onGoUp();
+  };
+
   return (
     <section className="space-y-6">
       <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-6">
@@ -92,8 +137,11 @@ export function FileBrowser({
             <tbody className="divide-y divide-slate-100">
               {currentParentId !== 'root' && !loading && (
                 <tr
-                  onDoubleClick={onGoUp}
-                  className="hover:bg-slate-50/80 transition-all group cursor-pointer"
+                  onPointerDown={handleRowPointerDown}
+                  onPointerMove={handleRowPointerMove}
+                  onPointerCancel={() => { pointerStartRef.current = null; }}
+                  onClick={handleParentRowClick}
+                  className="hover:bg-slate-50/80 transition-all group cursor-pointer select-none"
                 >
                   <td className="px-8 py-4" colSpan={4}>
                     <div className="flex items-center gap-4">
@@ -123,9 +171,12 @@ export function FileBrowser({
                 return (
                   <tr
                     key={file.id}
-                    onClick={() => onPreview(file)}
-                    onDoubleClick={() => onEnterFolder(file)}
-                    className="hover:bg-slate-50/80 transition-all group cursor-pointer"
+                    onPointerDown={handleRowPointerDown}
+                    onPointerMove={handleRowPointerMove}
+                    onPointerCancel={() => { pointerStartRef.current = null; }}
+                    onClick={() => handleRowClick(file)}
+                    onDoubleClick={() => handleRowDoubleClick(file)}
+                    className="hover:bg-slate-50/80 transition-all group cursor-pointer select-none"
                   >
                     <td className="px-8 py-5">
                       <div className="flex items-center gap-4">
