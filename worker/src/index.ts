@@ -99,6 +99,10 @@ function detectVideoStreamContentType(fileName: string): string {
 	return 'application/octet-stream';
 }
 
+function isImageContentType(contentType?: string): boolean {
+	return Boolean(contentType?.toLowerCase().startsWith('image/'));
+}
+
 async function deleteR2Prefix(bucket: R2Bucket, prefix: string): Promise<void> {
 	let cursor: string | undefined;
 
@@ -345,6 +349,45 @@ export default {
 				const url = await getSignedUrl(client, command, { expiresIn: 3600 });
 
 				return jsonResponse({ url });
+			}
+
+			// 获取缩略图: GET /api/items/:id/thumbnail
+			if (path.startsWith('/api/items/') && path.endsWith('/thumbnail') && method === 'GET') {
+				const id = path.split('/')[3];
+				const item = await env.DB.prepare(
+					'SELECT type, r2Key, contentType, mediaType, videoStatus, thumbnailPath FROM items WHERE id = ?'
+				).bind(id).first<ItemMetadata>();
+
+				if (!item || item.type !== 'file') return errorResponse('File not found', 404);
+
+				let objectKey: string | undefined;
+				let contentType = item.contentType || 'application/octet-stream';
+
+				if (item.mediaType === 'video') {
+					if (item.videoStatus !== 'completed' || !item.thumbnailPath) {
+						return errorResponse('Video thumbnail is not ready', 409);
+					}
+
+					objectKey = item.thumbnailPath;
+					contentType = 'image/jpeg';
+				} else if (isImageContentType(item.contentType) && item.r2Key) {
+					objectKey = item.r2Key;
+				}
+
+				if (!objectKey) return errorResponse('Thumbnail not available', 404);
+
+				const object = await env.MY_BUCKET.get(objectKey);
+				if (!object) return errorResponse('Thumbnail not found', 404);
+
+				return new Response(object.body, {
+					headers: {
+						...CORS_HEADERS,
+						'Content-Type': contentType,
+						'Cache-Control': item.mediaType === 'video'
+							? 'private, max-age=3600'
+							: 'private, max-age=300',
+					},
+				});
 			}
 
 			// HLS 视频流代理: GET /api/video/stream/:fileId/index.m3u8 或 segment-xxxxx.ts

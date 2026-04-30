@@ -101,6 +101,10 @@ export class FileService {
     return `${this.API_BASE}/video/stream/${encodeURIComponent(id)}/index.m3u8`;
   }
 
+  static getThumbnailUrl(id: string): string {
+    return `${this.API_BASE}/items/${encodeURIComponent(id)}/thumbnail`;
+  }
+
   /**
    * 创建文件夹
    */
