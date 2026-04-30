@@ -591,3 +591,398 @@
 - 实现大文件的分片上传支持。
 - 增加对上传超时和断点续传的处理。
 - 定期清理 R2 中未被 D1 关联的临时孤儿文件。
+
+## 2026-04-10 11:20 评估并制定网盘视频在线播放（HLS + 本地转码）方案
+
+### 背景
+用户希望在网盘中直接点击播放视频，而不必下载到本地。为了平衡成本与性能，需要一套利用现有基础设施（R2 + 本地硬件）的流媒体方案。
+
+### 目标
+利用 Cloudflare R2 免费下行流量和本地 Mac Mini 闲置算力，实现低成本、高性能、安全的视频 HLS 在线播放方案。
+
+### 采用的修改
+1.  **方案架构评估与优化**：
+    -   分析了“轮询数据库”方案的不足，提出了基于 **Cloudflare Tunnel Webhook** 的实时异步触发机制。
+    -   设计了 **Worker HLS 代理模式**，解决私有 R2 存储桶下 HLS 切片的访问鉴权问题，确保视频资源不被非法盗链。
+    -   引入了 **D1 状态锁机制**（pending/processing/completed/failed），增强转码任务的鲁棒性。
+2.  **路线图制定**：
+    -   在 `docs/TODO.md` 中规划了四个阶段的实施计划：从 D1 Schema 扩展到本地转码服务 (FFmpeg) 搭建，再到后端代理开发及前端 `hls.js` 集成。
+
+### 结果
+- 确立了技术可行性，并形成了可落地的技术规格说明书。
+- 优化了系统交互链路，将转码延迟从“分钟级轮询”降低到“秒级触发”。
+
+### 本次的最佳实践总结
+-   **异步事件驱动 (Event-driven)**：利用 Webhook 替代轮询是提升分布式系统实时性和降低资源损耗的最佳路径。
+-   **安全中继 (Secure Proxying)**：对于 HLS 这种涉及大量小文件的流媒体协议，通过 Worker 统一鉴权并代理转发 R2 内容，兼顾了安全性与访问便利性。
+-   **状态机设计**：在数据库中维护清晰的任务状态机，是处理长时间运行任务（如视频转码）的标配。
+
+### TODO(如果需要的话，一些将来可以做的事情)
+-   执行第一阶段任务：扩展 D1 Schema 以支持视频元数据。
+-   编写本地 Mac Mini 的转码 Worker 脚本。
+-   调研 `hls.js` 与 React 的最佳集成方式。
+
+## 2026-04-20 创建 Codex 用 AGENTS.md 并沉淀项目级协作规范
+
+### 背景
+项目此前主要使用 `GEMINI.md` 作为 AI 协作说明。为了让 Codex 在本仓库中稳定工作，需要提供一个更贴合 Codex 使用方式、同时兼容项目现有要求的 `AGENTS.md`。
+
+### 目标
+1. 基于现有 `GEMINI.md` 提炼项目级约束。
+2. 补充 `AGENTS.md` 的最佳实践内容，包括目录说明、工作流、验证要求、改动边界与输出规范。
+3. 让后续 AI agent 可以更一致地参与前后端与文档工作。
+
+### 采用的修改
+1. 在仓库根目录新增 `AGENTS.md`，保留原有核心要求：
+   - 启动后先等待用户指令。
+   - 修改时遵循最佳实践。
+   - 每次任务完成后更新 `docs/daily.md`。
+2. 增补了面向 Codex 的关键约束：
+   - 明确 monorepo 结构与 `frontend`、`worker`、`docs` 的职责边界。
+   - 约定任务执行流程，包括先读后改、最小充分验证、失败时说明原因。
+   - 整理前端、Worker、通用开发约束与禁止事项。
+   - 给出常用命令与决策优先级，减少 agent 的不确定行为。
+
+### 结果
+项目现在具备了专门面向 Codex 的统一协作入口文档，既继承了已有开发习惯，也补充了更完整的工程化执行标准，后续 AI 协作的一致性会更高。
+
+### 本次的最佳实践总结
+- **从历史约定平滑迁移**：将已有的 AI 协作规则迁移到新工具时，不应简单复制文件名，而应结合目标 agent 的工作方式补齐执行细则。
+- **项目级 agent 文档应兼顾约束与可操作性**：除了“要做什么”，还要明确“如何验证”“哪些不能做”“目录职责是什么”，这样才能真正减少误操作。
+
+### TODO(如果需要的话，一些将来可以做的事情)
+- 后续如果引入 CI，可在 `AGENTS.md` 中补充标准验证矩阵。
+- 如果前后端架构继续演进，可把关键接口约定与部署前检查项也纳入 `AGENTS.md`。
+
+## 2026-04-24 明确视频转码与在线播放的第一版架构方案
+
+### 背景
+
+项目已经具备基于 R2 预签名 URL 的上传能力，下一步需要为视频文件补充“上传后异步转码并在线播放”的能力。在方案讨论中，需要先固定关键边界，避免后续实现阶段反复推翻接口和数据模型。
+
+### 目标
+
+产出一份新的架构设计文档，明确第一版视频处理链路的设计原则、角色分工、数据模型、接口方向和实施计划。
+
+### 采用的修改
+
+1. 新增 `docs/video-architecture.md`，系统整理视频上传、异步转码、Worker 编排和在线播放的整体方案。
+2. 在文档中明确当前阶段暂不引入认证系统，先以单用户、无鉴权闭环为目标。
+3. 在文档中明确转码节点采用本地 `Mac Mini`，并通过轮询 claim 接口而非 Webhook 作为主链路。
+4. 补充了 `items` 与 `media_jobs` 的数据模型建议、状态流转、R2 路径规范、接口设计和分阶段实施计划。
+
+### 结果
+
+项目现在有了一份独立的视频架构文档，可以作为后续数据库迁移、Worker API 扩展、Mac Mini 服务开发和前端播放器接入的统一依据。
+
+### 本次的最佳实践总结
+
+在功能跨度较大且涉及多端协作时，应先明确系统边界、状态模型和任务编排方式，再进入编码阶段。这样可以减少接口反复、状态语义不清和跨模块实现偏移的问题。
+
+### TODO(如果需要的话，一些将来可以做的事情)
+
+- 将 `docs/video-architecture.md` 中的数据模型同步到 `docs/db.md`。
+- 在 Worker 中优先落地 `media_jobs` 与 claim 接口，验证轮询链路。
+- 评估 HLS 第一版采用 MPEG-TS 还是 fMP4 分片。
+
+## 2026-04-24 创建 Node.js + TypeScript 转码服务骨架
+
+### 背景
+
+为了让本地 `Mac Mini` 承担视频异步转码职责，需要先在仓库内落一个可运行的 `transcoder` 服务。该服务需要与现有 monorepo 保持一致，使用 TypeScript 开发，并按既定架构承担轮询 claim、下载原片、执行 FFmpeg、上传 HLS 产物和回写 Worker 状态的职责。
+
+### 目标
+
+在 `transcoder/` 目录中搭建一个基于 Node.js 的最小可运行转码服务，实现核心的任务处理闭环，并接入 npm workspaces。
+
+### 采用的修改
+
+1. 将 `transcoder` 加入根目录 `package.json` 的 workspaces，并补充了 `build:transcoder` 脚本。
+2. 为 `transcoder` 新增 `package.json`、`tsconfig.json` 和 `.env.example`，明确运行依赖、编译方式和环境变量约定。
+3. 新增了 Worker API 客户端、R2 读写封装、FFprobe/FFmpeg 处理器和主轮询服务，实现了完整的单任务处理链路。
+4. 约定了 Worker claim 与结果回写接口格式，使转码服务可以在 Worker API 就绪后直接接入。
+
+### 结果
+
+仓库现在已经具备了一个独立的 `transcoder` 工作区，能够作为 `Mac Mini` 常驻服务的代码基础，后续只需补齐 Worker 侧接口和本地环境变量即可联调。
+
+### 本次的最佳实践总结
+
+对于承担外部执行职责的边缘节点服务，应优先把运行时配置、外部依赖、业务编排和媒体处理能力解耦成清晰模块。这样后续无论是接入 `launchd`、补重试机制，还是替换 Worker API 契约，都不会牵一发动全身。
+
+### TODO(如果需要的话，一些将来可以做的事情)
+
+- 为 `transcoder` 增加 `launchd` 部署说明和日志目录约定。
+- 在 Worker 侧落地 `claim` / `video-metadata` 接口后进行端到端联调。
+- 根据实际源文件特征再决定是否增加“兼容时仅切片、不转码”的优化分支。
+
+## 2026-04-30 补齐视频转码 Worker 接口并配置本地转码环境
+### 背景
+
+之前已经创建了 `transcoder` 服务目录和核心转码逻辑，但 Worker 端尚未提供任务领取与结果回写接口，导致只能验证本地 ffmpeg 处理，无法进行端到端联调。
+
+### 目标
+
+补齐 Worker 侧转码任务接口，并根据现有 `worker/.dev.vars` 与 `worker/wrangler.jsonc` 为 `transcoder` 配置本地运行所需环境变量。
+
+### 采用的修改
+
+1. 扩展 `worker/schema.sql`，为 `items` 表增加视频状态、HLS、缩略图与元数据字段，并新增 `media_jobs` 任务表。
+2. 新增 `worker/migrations/0000_initial.sql` 与 `0001_video_transcoding.sql`，用于初始化或升级已有本地 D1 数据库。
+3. 在 `worker/src/index.ts` 中实现：
+   - 上传视频元数据时自动创建 `pending` 转码任务。
+   - `POST /api/media/jobs/claim` 用于转码服务领取任务并标记为 `processing`。
+   - `PATCH /api/items/:id/video-metadata` 用于转码完成或失败后的状态回写。
+4. 为 `transcoder` 增加 `.dev.vars`，复用当前 Worker/R2 本地配置，并新增 `npm run dev --workspace=transcoder` 读取该文件的启动方式。
+5. 为云端联调补充远程前端模式和 `transcoder` 远程环境文件，使本地前端与本地转码服务可以直接连接已部署 Worker。
+6. 更新 Worker 示例测试，使其验证当前真实存在的 `/ping` 健康检查接口。
+
+### 结果
+
+- `npm run build --workspace=transcoder` 通过。
+- `npx tsc -p worker/tsconfig.json --noEmit` 通过。
+- `npm run test --workspace=worker` 通过。
+- 本地与远程 D1 migration 均已应用，远程 Worker 已部署到 `https://worker.1wangyumeng.workers.dev`。
+
+### 本次的最佳实践总结
+
+转码这类异步流程应通过独立任务表表达执行状态，同时让业务表只保留面向展示和播放的结果字段；接口回写时校验 `jobId` 与 `itemId` 归属关系，可以避免过期任务或错误任务覆盖当前文件状态。
+
+### TODO(如果需要的话，一些将来可以做的事情)
+
+- 增加视频流代理接口，统一从 Worker 输出 HLS playlist 与 segment。
+- 为 `media_jobs` 增加重试次数、超时恢复和失败排障字段。
+- 补充 claim 与回写接口的专项测试数据初始化。
+
+## 2026-04-30 实现 HLS 视频播放前端与 Worker 代理接口
+### 背景
+
+视频上传和本地转码链路已经具备，但前端还不能直接播放转码后的 HLS，Worker 也缺少对私有 R2 中 HLS playlist 与 segment 的代理读取接口。
+
+### 目标
+
+让用户在文件列表中直接打开已完成转码的视频，并通过 Worker 代理访问 R2 中的 HLS 资源，避免暴露真实 R2 存储路径。
+
+### 采用的修改
+
+1. 在 Worker 中新增 `GET /api/video/stream/:fileId/index.m3u8` 与 `GET /api/video/stream/:fileId/:segmentName` 代理接口。
+2. Worker 代理接口会校验文件存在、媒体类型为视频、转码状态为 `completed`，再从 R2 读取对应 HLS 对象并返回正确的 `Content-Type`。
+3. 前端 `FileItem` 类型补充视频转码字段，并新增 HLS 播放 URL 生成方法。
+4. 前端引入 `hls.js`，并采用动态加载方式，只在打开视频播放器时加载 HLS 播放库。
+5. 文件列表增加视频转码状态展示，完成后点击预览可打开视频播放器，处理中可刷新状态。
+
+### 结果
+
+- `npm run build --workspace=frontend` 通过。
+- `npx tsc -p worker/tsconfig.json --noEmit` 通过。
+- `npm run test --workspace=worker` 通过。
+- Worker 已部署到 `https://worker.1wangyumeng.workers.dev`，云端 `/api/video/stream/...` 路由已生效。
+
+### 本次的最佳实践总结
+
+私有对象存储中的 HLS 资源应通过应用层代理输出，而不是直接公开 R2 路径；前端播放库体积较大时，应使用动态加载减少常规文件浏览场景的初始包体积。
+
+### TODO(如果需要的话，一些将来可以做的事情)
+
+- 为视频缩略图增加 Worker 代理接口，并在文件列表中展示缩略图。
+- 为 HLS 代理加入鉴权和更细粒度缓存策略。
+- 针对 HLS playlist/segment 路由补充专项测试。
+
+## 2026-04-30 整理 monorepo 忽略规则
+### 背景
+
+项目在接入前端远程环境、Worker 云端联调和本地转码服务后，工作区中出现了更多本地环境文件、编译产物、Wrangler 状态目录和转码临时产物，需要统一整理 Git 忽略规则，避免误提交密钥或生成文件。
+
+### 目标
+
+按 monorepo 最佳实践整理根目录、前端、Worker 与 transcoder 的 `.gitignore`，让源码、模板和迁移文件可以提交，本地密钥、依赖、缓存和构建产物不进入版本管理。
+
+### 采用的修改
+
+1. 扩展根目录 `.gitignore`，统一忽略依赖、构建产物、缓存、测试覆盖率、Wrangler 本地状态、日志、本地环境文件和编辑器系统文件。
+2. 整理 `frontend/.gitignore`，补充 Vite/TypeScript/ESLint 产物和 `.env.*` 忽略规则，同时保留 `.env.example` 类模板。
+3. 重写 `worker/.gitignore`，移除模板中无效的转义规则，保留 Worker 相关的依赖、构建、缓存、Wrangler 状态和本地密钥忽略规则。
+4. 新增 `transcoder/.gitignore`，忽略 `dist/`、`.tmp/`、`output/`、本地环境变量和日志，保留 `.env.example`。
+
+### 结果
+
+- `frontend/.env.remote`、`transcoder/.dev.vars`、`transcoder/.env.remote.local`、`dist/`、`.tmp/`、`.wrangler/` 等本地文件和产物已被忽略。
+- `transcoder/.env.example` 仍可被 Git 追踪，适合作为配置模板提交。
+- `git diff --check -- docs/daily.md` 通过。
+
+### 本次的最佳实践总结
+
+monorepo 的忽略规则应以根目录通用规则为主、workspace 局部规则为辅；真实环境文件默认忽略，示例模板显式放行，这样既能降低密钥泄露风险，也能保留新环境初始化所需的文档化配置入口。
+
+### TODO(如果需要的话，一些将来可以做的事情)
+
+- 如果后续确认 `frontend/.env.development` 也不应继续纳入版本管理，可以单独执行取消追踪操作，同时提供 `.env.example` 作为替代模板。
+
+## 2026-04-30 同步视频架构、数据库和部署文档
+### 背景
+
+视频上传、转码、HLS 播放和云端联调链路已经落地，原有文档仍停留在部分“设计建议”阶段，与实际实现存在字段、路径、迁移和部署流程上的偏差。
+
+### 目标
+
+对齐 `docs/video-architecture.md`、`docs/db.md` 和 `docs/deploy.md`，确保文档反映当前可运行实现，而不是过时方案。
+
+### 采用的修改
+
+1. 更新视频架构文档，将 `media_jobs` 字段、R2 路径、轮询策略、FFmpeg 策略和阶段状态同步为当前实现。
+2. 重写数据库文档，补充 `items` 视频字段、`media_jobs` 表、索引、migration 使用方式和 HLS 路径约定。
+3. 重写部署文档，补充 D1 migrations、Worker 部署、前端远程联调、Cloudflare Pages 配置、本地 transcoder 配置和视频播放验证流程。
+
+### 结果
+
+- 文档与当前代码实现保持一致。
+- 部署与联调步骤覆盖前端、Worker、D1、R2 和 transcoder。
+- 后续新环境可以按文档完成初始化、部署和视频播放验证。
+
+### 本次的最佳实践总结
+
+当设计文档进入实现阶段后，应把“建议”及时收敛为“当前实现”，并把数据库结构和部署流程同步更新；否则文档会在最需要指导联调和上线时制造歧义。
+
+### TODO(如果需要的话，一些将来可以做的事情)
+
+- 后续实现鉴权、缩略图代理或转码重试后，继续同步更新三份文档。
+
+## 2026-04-30 删除过时 TODO 文档
+### 背景
+
+`docs/TODO.md` 仍记录早期视频在线播放方案，包括 Webhook 触发、JWT 校验、`video_status` 字段、`uploads/{file_id}` 原片路径和 `seg-1.ts` 分片命名等内容。这些信息已经与当前实现和最新架构文档不一致。
+
+### 目标
+
+移除容易误导后续开发的过时规划文档，避免 `docs/TODO.md` 与 `docs/video-architecture.md`、`docs/db.md`、`docs/deploy.md` 之间出现重复且冲突的信息源。
+
+### 采用的修改
+
+1. 删除 `docs/TODO.md`。
+2. 保留当前有效的后续事项在 `docs/video-architecture.md`、`docs/deploy.md` 和 `docs/daily.md` 的 TODO 小节中。
+
+### 结果
+
+文档入口更清晰：视频方案看 `docs/video-architecture.md`，数据库结构看 `docs/db.md`，部署联调看 `docs/deploy.md`，历史过程和零散后续事项看 `docs/daily.md`。
+
+### 本次的最佳实践总结
+
+过时 TODO 比没有 TODO 更危险。项目进入实现阶段后，应删除或合并旧规划，确保仓库中只保留一个权威的信息来源，减少后续维护者按旧方案实现的风险。
+
+### TODO(如果需要的话，一些将来可以做的事情)
+
+- 如果后续需要集中维护路线图，可以新建一份轻量 `docs/roadmap.md`，但应只记录仍未完成且与当前架构一致的事项。
+
+## 2026-04-30 更新根目录 README
+### 背景
+
+根目录 `README.md` 仍停留在基础网盘阶段，只描述了前端、Worker、D1 和 R2，缺少当前已经落地的 `transcoder`、视频异步转码、HLS 播放、D1 migrations 和云端联调说明。
+
+### 目标
+
+将 README 更新为项目当前状态的入口文档，让新接手者可以快速理解架构、目录、常用命令和视频处理链路。
+
+### 采用的修改
+
+1. 重写项目简介，补充 R2、D1、Worker、HLS 代理和本地 transcoder 的职责。
+2. 更新项目结构、技术栈和快速开始步骤。
+3. 补充 D1 migrations、transcoder 环境变量、云端联调命令和视频处理流程。
+4. 增加指向 `docs/video-architecture.md`、`docs/db.md`、`docs/deploy.md` 和 `docs/daily.md` 的文档入口。
+
+### 结果
+
+README 现在与当前实现保持一致，可以作为仓库首页说明和开发入口使用。
+
+### 本次的最佳实践总结
+
+根目录 README 应承担“快速建立上下文”的职责，详细规则和部署细节应链接到专门文档；当项目新增独立 workspace 或关键能力时，应及时更新 README，避免入口文档落后于实际架构。
+
+### TODO(如果需要的话，一些将来可以做的事情)
+
+- 如果后续部署前端到正式 Pages 域名，可以在 README 中补充线上访问地址。
+
+## 2026-04-30 更新前端 README
+### 背景
+
+`frontend/README.md` 仍是 Vite 模板说明，未描述 CloudNet 前端当前已经具备的文件管理、R2 直传、图片预览、视频状态展示和 HLS 播放能力。
+
+### 目标
+
+将前端 README 更新为当前应用的开发入口文档，明确环境变量、开发命令、API 调用约定和播放策略。
+
+### 采用的修改
+
+1. 删除 Vite 模板说明，改为 CloudNet Frontend 项目说明。
+2. 补充前端功能、技术栈、`VITE_API_BASE_URL` 环境变量和本地/远程启动命令。
+3. 记录上传二阶段流程、视频状态展示和 HLS 播放策略。
+4. 增加源码目录说明和 Cloudflare Pages 部署配置入口。
+
+### 结果
+
+前端 README 现在与当前实现一致，可以指导本地开发、远程联调和 Pages 部署配置。
+
+### 本次的最佳实践总结
+
+子项目 README 应聚焦该 workspace 的职责和运行方式，避免保留脚手架模板内容；根 README 提供全局上下文，workspace README 提供局部开发细节，两者互补而不重复。
+
+### TODO(如果需要的话，一些将来可以做的事情)
+
+- 如果后续拆分前端组件或增加路由，可以同步补充更细的目录说明。
+
+## 2026-04-30 更新 AGENTS 协作规范
+### 背景
+
+项目已经从基础前后端网盘扩展为包含 `frontend`、`worker`、`transcoder` 三个 workspace 的视频网盘，原 `AGENTS.md` 对 transcoder、D1 migrations、HLS 代理和视频状态验证的约束不够完整。
+
+### 目标
+
+让后续 AI agent 在本仓库中工作时，能准确理解当前架构、目录职责、推荐命令和验证要求。
+
+### 采用的修改
+
+1. 在项目概览和目录约定中补充 `transcoder/`、`worker/migrations/` 和 HLS 代理职责。
+2. 在工作流程中补充 Worker 类型检查、transcoder 构建验证和 D1 migration 要求。
+3. 更新推荐命令，增加 `build:transcoder`、transcoder 本地/远程启动和 D1 migration 命令。
+4. 增加前端视频状态、Worker HLS 代理、Transcoder 环境变量和失败回写等约束。
+5. 补充删除或重命名文档时需要同步检查引用的通用规则。
+
+### 结果
+
+`AGENTS.md` 现在与当前 monorepo 架构和视频处理链路一致，可作为后续 AI 协作的有效约束文档。
+
+### 本次的最佳实践总结
+
+Agent 协作规范应随着架构演进同步更新。尤其当项目新增 workspace、数据库迁移机制或跨端链路时，需要把验证命令和边界约束写入规则，减少后续自动化修改时的误判。
+
+### TODO(如果需要的话，一些将来可以做的事情)
+
+- 如果后续引入认证、重试队列或正式 CI 验证矩阵，应继续把相关规则补进 `AGENTS.md`。
+
+## 2026-04-30 新增 Transcoder 运行指南
+### 背景
+
+`transcoder` 需要在 Mac Mini 上长期后台运行，才能持续轮询云端 Worker 的视频转码任务。此前相关操作只在对话中说明，仓库内缺少可复用的运维文档。
+
+### 目标
+
+新增一份专门的转码服务运行指南，说明临时测试、云端联调、launchd 后台常驻、日志查看、停止服务、更新代码和故障排查流程。
+
+### 采用的修改
+
+1. 新增 `docs/transcoder.md`，记录 transcoder 工作方式、运行模式和环境变量。
+2. 补充 Mac Mini 前置依赖检查，包括 `npm`、`node`、`ffmpeg` 和 `ffprobe`。
+3. 提供 `launchd` plist 示例，用于 `start:remote` 常驻运行。
+4. 补充日志、停止、更新和排查步骤。
+5. 在 README、部署文档和 AGENTS 文档索引中加入 `docs/transcoder.md`。
+
+### 结果
+
+Mac Mini 上部署和维护本地转码服务有了明确操作手册，后续不需要从聊天记录中查找命令。
+
+### 本次的最佳实践总结
+
+长期运行的本地服务应有独立运维文档，明确“进程在哪里跑、连接哪个环境、如何启动、如何停止、如何看日志、如何更新”。这能降低把开发命令误当生产常驻命令使用的风险。
+
+### TODO(如果需要的话，一些将来可以做的事情)
+
+- 后续可以补充一个 launchd plist 模板文件，减少手工复制配置时的路径错误。

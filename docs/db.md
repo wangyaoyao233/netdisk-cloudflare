@@ -1,70 +1,180 @@
 # 数据库设计文档 (Cloudflare D1)
 
-本项目采用 **元数据 (Metadata) 与 存储 (Storage) 分离** 的架构。Cloudflare D1 (SQLite) 负责管理文件系统的层级结构和属性，而 Cloudflare R2 仅作为纯粹的二进制大对象存储。
+本项目采用 **元数据 (Metadata) 与存储 (Storage) 分离** 的架构。Cloudflare D1 负责管理文件系统层级、文件属性和视频处理状态，Cloudflare R2 负责保存原始文件、HLS 分片和缩略图等二进制对象。
 
-## 1. 数据表结构: `items`
+## 1. 数据库迁移
 
-这是系统中最核心的表，用于存储文件和文件夹的统一元数据。
+数据库结构以 `worker/schema.sql` 和 `worker/migrations/` 为准。
+
+新环境可以直接使用 schema 初始化：
+
+```bash
+cd worker
+npx wrangler d1 execute netdisk-db --local --file=./schema.sql
+npx wrangler d1 execute netdisk-db --remote --file=./schema.sql
+```
+
+已有环境应使用 migrations 升级：
+
+```bash
+cd worker
+npx wrangler d1 migrations apply netdisk-db --local
+npx wrangler d1 migrations apply netdisk-db --remote
+```
+
+当前 migration：
+
+- `0000_initial.sql`：创建基础 `items` 表和父目录索引。
+- `0001_video_transcoding.sql`：为 `items` 增加视频字段，并创建 `media_jobs` 表。
+
+## 2. `items` 表
+
+`items` 是系统主表，用于统一存储文件和文件夹的业务元数据。
 
 ```sql
-CREATE TABLE items (
-    id TEXT PRIMARY KEY,          -- 唯一 ID (UUID)
-    parentId TEXT,                -- 父文件夹 ID (根目录为 'root')
-    name TEXT NOT NULL,           -- 显示名称 (例如: "我的图片.jpg")
-    type TEXT NOT NULL,           -- 类型: 'file' 或 'folder'
-    size INTEGER,                 -- 文件大小 (字节, 文件夹为 NULL)
-    contentType TEXT,             -- MIME 类型 (例如: "image/jpeg")
-    r2Key TEXT,                   -- R2 桶中的物理 Key (例如: "files/uuid")
+CREATE TABLE IF NOT EXISTS items (
+    id TEXT PRIMARY KEY,
+    parentId TEXT,
+    name TEXT NOT NULL,
+    type TEXT NOT NULL,
+    size INTEGER,
+    contentType TEXT,
+    r2Key TEXT,
+    mediaType TEXT,
+    videoStatus TEXT,
+    hlsPath TEXT,
+    thumbnailPath TEXT,
+    duration INTEGER,
+    width INTEGER,
+    height INTEGER,
+    videoError TEXT,
     createdAt DATETIME DEFAULT CURRENT_TIMESTAMP,
     updatedAt DATETIME DEFAULT CURRENT_TIMESTAMP
 );
 
--- 索引：加速按父目录查询
-CREATE INDEX idx_items_parentId ON items(parentId);
+CREATE INDEX IF NOT EXISTS idx_items_parentId ON items(parentId);
 ```
 
----
+字段说明：
 
-## 2. 核心设计思路
+- `id`：条目 ID，文件夹和文件统一使用 UUID。
+- `parentId`：父文件夹 ID，根目录为 `root`。
+- `name`：用户可见名称。
+- `type`：`file` 或 `folder`。
+- `size`：文件大小，文件夹为 `NULL`。
+- `contentType`：MIME 类型，例如 `video/mp4`。
+- `r2Key`：R2 中的原始对象 Key，当前上传路径为 `files/{uuid}`。
+- `mediaType`：媒体类型，视频为 `video`，非媒体文件为 `NULL`。
+- `videoStatus`：视频处理状态，取值为 `pending`、`processing`、`completed`、`failed`。
+- `hlsPath`：HLS playlist 路径，例如 `hls/{itemId}/index.m3u8`。
+- `thumbnailPath`：缩略图路径，例如 `thumbnails/{itemId}.jpg`。
+- `duration`、`width`、`height`：视频元数据。
+- `videoError`：最近一次视频处理失败原因。
+- `createdAt`、`updatedAt`：创建和更新时间。
 
-### 2.1 逻辑与物理的彻底解耦
-*   **设计**：用户看到的 `name` (文件名) 存储在数据库中，而 R2 中的物理 `r2Key` 是一串随机的 UUID（例如 `files/550e8400-e29b...`）。
-*   **优化思路**：
-    *   **秒级重命名**：重命名文件或文件夹时，只需修改数据库的一行 `name` 字段，无需移动 R2 中的数据。
-    *   **秒级移动**：移动文件到另一个文件夹，只需修改 `parentId`，无需物理复制。
-    *   **安全性**：即使 R2 桶不慎泄露，攻击者也无法通过物理 Key 猜出原始文件名或层级结构。
+## 3. `media_jobs` 表
 
-### 2.2 扁平化存储结构 (R2 侧)
-*   **设计**：R2 中不创建任何物理“目录”。所有文件都平铺在 `files/` 前缀下。
-*   **优化思路**：对象存储在处理极深路径时性能可能会下降。通过平铺存储，我们可以规避对象存储的路径限制，将层级管理的复杂性完全交给 SQL 数据库处理。
+`media_jobs` 保存异步媒体任务的过程态。当前第一版只支持视频转码任务，因此没有单独的 `jobType` 字段。
 
-### 2.3 统一实体模型 (Items)
-*   **设计**：文件和文件夹共用一张表，通过 `type` 字段区分。
-*   **优化思路**：
-    *   **查询简化**：只需要一条 SQL (`WHERE parentId = ?`) 即可同时获取当前目录下的所有子文件夹和文件。
-    *   **层级一致性**：文件夹和文件在系统逻辑中被视为同等地位的“条目”。
+```sql
+CREATE TABLE IF NOT EXISTS media_jobs (
+    id TEXT PRIMARY KEY,
+    itemId TEXT NOT NULL,
+    status TEXT NOT NULL,
+    workerId TEXT,
+    errorMessage TEXT,
+    createdAt DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updatedAt DATETIME DEFAULT CURRENT_TIMESTAMP,
+    claimedAt DATETIME,
+    completedAt DATETIME,
+    FOREIGN KEY (itemId) REFERENCES items(id) ON DELETE CASCADE
+);
 
----
+CREATE INDEX IF NOT EXISTS idx_media_jobs_status_createdAt ON media_jobs(status, createdAt);
+CREATE INDEX IF NOT EXISTS idx_media_jobs_itemId ON media_jobs(itemId);
+```
 
-## 3. 性能优化方案
+字段说明：
 
-### 3.1 覆盖索引 (Covering Index)
-*   我们在 `parentId` 上建立了索引。在执行 `SELECT * FROM items WHERE parentId = ?` 时，数据库可以极快地定位到特定目录下的内容。
-*   **进阶优化建议**：如果未来文件量达到百万级，可以考虑复合索引 `(parentId, type, name)`，进一步提升排序和过滤性能。
+- `id`：任务 ID。
+- `itemId`：关联的 `items.id`。
+- `status`：任务状态，取值为 `pending`、`processing`、`completed`、`failed`。
+- `workerId`：领取任务的本地转码节点标识，例如 `mac-mini-01`。
+- `errorMessage`：任务失败原因。
+- `claimedAt`：任务被领取时间。
+- `completedAt`：任务完成或失败时间。
 
-### 3.2 递归操作处理
-*   **文件夹大小计算**：文件夹本身不存储 `size`。动态计算文件夹大小时，通过数据库递归查询所有子文件的 `size` 总和，避免了在 R2 中进行昂贵的 `List Objects` 操作。
+索引说明：
 
----
+- `idx_media_jobs_status_createdAt`：用于 claim 接口按状态和创建时间领取最早任务。
+- `idx_media_jobs_itemId`：用于按文件定位任务。
 
-## 4. 为什么这样设计？ (架构对比)
+## 4. 视频状态流转
 
-| 维度 | 方案 A: 纯 R2 路径模拟 (`key="a/b/c.jpg"`) | 方案 B: D1 元数据驱动 (本项目采用) |
-| :--- | :--- | :--- |
-| **空文件夹** | 不支持 (必须有文件路径才存在) | **完美支持** (数据库存一条 folder 记录) |
-| **重命名/移动** | 极慢 (需 Copy + Delete 所有对象) | **极快** (仅修改数据库一列) |
-| **元数据扩展** | 极难 (Key 长度有限) | **简单** (直接增加数据库字段，如星标、标签) |
-| **性能** | 受限于对象存储的 List 速度 | **极快** (依赖 SQL 索引) |
+视频上传成功并创建文件记录后，Worker 会根据 `contentType` 判断是否为视频。
 
-### 结论
-对于一个**现代化网盘**，数据库元数据是不可或缺的。它提供了对象存储所缺失的“文件系统灵活性”，是实现回收站、秒传、版本控制、细粒度权限等高级功能的基石。
+```text
+POST /api/items
+  -> contentType startsWith video/
+  -> items.mediaType = video
+  -> items.videoStatus = pending
+  -> media_jobs.status = pending
+```
+
+本地 `transcoder` 通过 claim 接口领取任务：
+
+```text
+pending -> processing
+```
+
+转码完成后回写：
+
+```text
+processing -> completed
+```
+
+失败时回写：
+
+```text
+processing -> failed
+```
+
+`items.videoStatus` 面向前端展示和播放判断；`media_jobs.status` 面向任务执行和排障。
+
+## 5. R2 路径约定
+
+当前实现使用以下路径：
+
+- 原始文件：`files/{uuid}`
+- HLS playlist：`hls/{itemId}/index.m3u8`
+- HLS segment：`hls/{itemId}/segment-00000.ts`
+- 缩略图：`thumbnails/{itemId}.jpg`
+
+前端不会直接访问这些 R2 路径。HLS 播放统一通过 Worker 代理：
+
+```text
+GET /api/video/stream/:fileId/index.m3u8
+GET /api/video/stream/:fileId/:segmentName
+```
+
+## 6. 核心设计思路
+
+### 6.1 逻辑与物理解耦
+
+用户看到的 `name` 存储在 D1，R2 中的 `r2Key` 是随机路径。重命名和移动只需要修改 D1，不需要移动 R2 对象。
+
+### 6.2 统一实体模型
+
+文件和文件夹共用 `items` 表，通过 `type` 区分。目录查询只需要：
+
+```sql
+SELECT * FROM items WHERE parentId = ? ORDER BY type DESC, name ASC;
+```
+
+### 6.3 异步媒体处理
+
+视频转码不阻塞上传链路。上传完成后只创建任务，真正的 FFmpeg 处理由本地 `transcoder` 轮询执行。
+
+### 6.4 私有对象代理
+
+原片下载、HLS playlist 和 segment 都不直接暴露 R2 对象路径。Worker 作为访问入口，便于后续加入鉴权、缓存和访问审计。

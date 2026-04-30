@@ -24,8 +24,28 @@ export interface ItemMetadata {
 	size?: number;
 	contentType?: string;
 	r2Key?: string;
+	mediaType?: 'video';
+	videoStatus?: 'pending' | 'processing' | 'completed' | 'failed';
+	hlsPath?: string;
+	thumbnailPath?: string;
+	duration?: number;
+	width?: number;
+	height?: number;
+	videoError?: string;
 	createdAt?: string;
 	updatedAt?: string;
+}
+
+export interface MediaJob {
+	id: string;
+	itemId: string;
+	status: 'pending' | 'processing' | 'completed' | 'failed';
+	workerId?: string;
+	errorMessage?: string;
+	createdAt?: string;
+	updatedAt?: string;
+	claimedAt?: string;
+	completedAt?: string;
 }
 
 /**
@@ -33,7 +53,7 @@ export interface ItemMetadata {
  */
 const CORS_HEADERS = {
 	'Access-Control-Allow-Origin': '*',
-	'Access-Control-Allow-Methods': 'GET, POST, DELETE, OPTIONS',
+	'Access-Control-Allow-Methods': 'GET, POST, PATCH, DELETE, OPTIONS',
 	'Access-Control-Allow-Headers': 'Content-Type',
 };
 
@@ -62,6 +82,22 @@ const jsonResponse = (data: any, status = 200) =>
 
 const errorResponse = (message: string, status = 500) =>
 	new Response(message, { status, headers: CORS_HEADERS });
+
+function isVideoContentType(contentType?: string): boolean {
+	return Boolean(contentType?.toLowerCase().startsWith('video/'));
+}
+
+function normalizeOptionalNumber(value: unknown): number | null {
+	if (value === undefined || value === null || value === '') return null;
+	const numberValue = Number(value);
+	return Number.isFinite(numberValue) ? Math.round(numberValue) : null;
+}
+
+function detectVideoStreamContentType(fileName: string): string {
+	if (fileName.endsWith('.m3u8')) return 'application/vnd.apple.mpegurl';
+	if (fileName.endsWith('.ts')) return 'video/mp2t';
+	return 'application/octet-stream';
+}
 
 export default {
 	async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
@@ -142,12 +178,121 @@ export default {
 				const { id, parentId, name, size, contentType, r2Key } = await request.json() as any;
 				if (!id || !name || !r2Key) return errorResponse('Missing metadata', 400);
 
+				const shouldCreateVideoJob = isVideoContentType(contentType);
+				const mediaType = shouldCreateVideoJob ? 'video' : null;
+				const videoStatus = shouldCreateVideoJob ? 'pending' : null;
+
 				// 记录元数据到数据库
 				await env.DB.prepare(
-					'INSERT INTO items (id, parentId, name, type, size, contentType, r2Key) VALUES (?, ?, ?, ?, ?, ?, ?)'
-				).bind(id, parentId, name, 'file', size, contentType, r2Key).run();
+					'INSERT INTO items (id, parentId, name, type, size, contentType, r2Key, mediaType, videoStatus) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)'
+				).bind(id, parentId, name, 'file', size, contentType, r2Key, mediaType, videoStatus).run();
+
+				if (shouldCreateVideoJob) {
+					await env.DB.prepare(
+						'INSERT INTO media_jobs (id, itemId, status) VALUES (?, ?, ?)'
+					).bind(crypto.randomUUID(), id, 'pending').run();
+				}
 
 				return jsonResponse({ id, name, parentId, type: 'file' }, 201);
+			}
+
+			// 领取视频转码任务: POST /api/media/jobs/claim
+			if (path === '/api/media/jobs/claim' && method === 'POST') {
+				const { workerId } = await request.json() as { workerId?: string };
+				if (!workerId) return errorResponse('Missing workerId', 400);
+
+				const job = await env.DB.prepare(
+					`SELECT media_jobs.id, media_jobs.itemId, items.name, items.r2Key, items.contentType
+					 FROM media_jobs
+					 INNER JOIN items ON items.id = media_jobs.itemId
+					 WHERE media_jobs.status = ?
+					 ORDER BY media_jobs.createdAt ASC
+					 LIMIT 1`
+				).bind('pending').first<{ id: string; itemId: string; name: string; r2Key: string; contentType?: string }>();
+
+				if (!job) {
+					return new Response(null, { status: 204, headers: CORS_HEADERS });
+				}
+
+				const updateResult = await env.DB.prepare(
+					`UPDATE media_jobs
+					 SET status = ?, workerId = ?, claimedAt = CURRENT_TIMESTAMP, updatedAt = CURRENT_TIMESTAMP
+					 WHERE id = ? AND status = ?`
+				).bind('processing', workerId, job.id, 'pending').run();
+
+				if (updateResult.meta.changes === 0) {
+					return new Response(null, { status: 204, headers: CORS_HEADERS });
+				}
+
+				await env.DB.prepare(
+					'UPDATE items SET videoStatus = ?, updatedAt = CURRENT_TIMESTAMP WHERE id = ?'
+				).bind('processing', job.itemId).run();
+
+				return jsonResponse({
+					jobId: job.id,
+					itemId: job.itemId,
+					fileName: job.name,
+					sourceR2Key: job.r2Key,
+					contentType: job.contentType,
+				});
+			}
+
+			// 回写视频转码结果: PATCH /api/items/:id/video-metadata
+			if (path.startsWith('/api/items/') && path.endsWith('/video-metadata') && method === 'PATCH') {
+				const id = path.split('/')[3];
+				if (!id) return errorResponse('Missing item ID', 400);
+
+				const payload = await request.json() as {
+					jobId?: string;
+					videoStatus?: 'completed' | 'failed';
+					hlsPath?: string;
+					thumbnailPath?: string;
+					duration?: number;
+					width?: number;
+					height?: number;
+					errorMessage?: string;
+				};
+
+				if (!payload.jobId) return errorResponse('Missing jobId', 400);
+				if (payload.videoStatus !== 'completed' && payload.videoStatus !== 'failed') {
+					return errorResponse('Invalid videoStatus', 400);
+				}
+
+				const job = await env.DB.prepare(
+					'SELECT id, itemId, status FROM media_jobs WHERE id = ? AND itemId = ?'
+				).bind(payload.jobId, id).first<MediaJob>();
+
+				if (!job) return errorResponse('Media job not found', 404);
+				if (job.status !== 'processing') return errorResponse('Media job is not processing', 409);
+
+				const duration = normalizeOptionalNumber(payload.duration);
+				const width = normalizeOptionalNumber(payload.width);
+				const height = normalizeOptionalNumber(payload.height);
+				const errorMessage = payload.videoStatus === 'failed' ? payload.errorMessage || 'Transcode failed' : null;
+
+				await env.DB.batch([
+					env.DB.prepare(
+						`UPDATE items
+						 SET videoStatus = ?, hlsPath = ?, thumbnailPath = ?, duration = ?, width = ?, height = ?, videoError = ?, updatedAt = CURRENT_TIMESTAMP
+						 WHERE id = ?`
+					).bind(
+						payload.videoStatus,
+						payload.hlsPath || null,
+						payload.thumbnailPath || null,
+						duration,
+						width,
+						height,
+						errorMessage,
+						id
+					),
+					env.DB.prepare(
+						`UPDATE media_jobs
+						 SET status = ?, errorMessage = ?, completedAt = CURRENT_TIMESTAMP, updatedAt = CURRENT_TIMESTAMP
+						 WHERE id = ?`
+					).bind(payload.videoStatus, errorMessage, payload.jobId),
+				]);
+
+				return jsonResponse({ id, videoStatus: payload.videoStatus });
 			}
 
 			// 获取下载链接: GET /api/items/:id/download
@@ -185,6 +330,44 @@ export default {
 				const url = await getSignedUrl(client, command, { expiresIn: 3600 });
 
 				return jsonResponse({ url });
+			}
+
+			// HLS 视频流代理: GET /api/video/stream/:fileId/index.m3u8 或 segment-xxxxx.ts
+			if (path.startsWith('/api/video/stream/') && method === 'GET') {
+				const parts = path.split('/');
+				const fileId = parts[4];
+				const fileName = parts[5];
+
+				if (!fileId || !fileName || parts.length !== 6 || fileName.includes('..') || fileName.includes('/')) {
+					return errorResponse('Invalid video stream path', 400);
+				}
+
+				const item = await env.DB.prepare(
+					'SELECT id, type, mediaType, videoStatus, hlsPath FROM items WHERE id = ?'
+				).bind(fileId).first<ItemMetadata>();
+
+				if (!item || item.type !== 'file' || item.mediaType !== 'video') {
+					return errorResponse('Video not found', 404);
+				}
+
+				if (item.videoStatus !== 'completed' || !item.hlsPath) {
+					return errorResponse('Video is not ready', 409);
+				}
+
+				const objectKey = fileName === 'index.m3u8' ? item.hlsPath : `hls/${fileId}/${fileName}`;
+				const object = await env.MY_BUCKET.get(objectKey);
+
+				if (!object) return errorResponse('Video segment not found', 404);
+
+				return new Response(object.body, {
+					headers: {
+						...CORS_HEADERS,
+						'Content-Type': detectVideoStreamContentType(fileName),
+						'Cache-Control': fileName.endsWith('.m3u8')
+							? 'private, max-age=30'
+							: 'public, max-age=31536000, immutable',
+					},
+				});
 			}
 
 			// 删除项目: DELETE /api/items/:id
