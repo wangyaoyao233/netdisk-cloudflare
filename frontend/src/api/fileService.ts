@@ -6,6 +6,14 @@ export interface FileItem {
   size?: number;
   contentType?: string;
   r2Key?: string;
+  mediaType?: 'video';
+  videoStatus?: 'pending' | 'processing' | 'completed' | 'failed';
+  hlsPath?: string;
+  thumbnailPath?: string;
+  duration?: number;
+  width?: number;
+  height?: number;
+  videoError?: string;
   createdAt?: string;
   updatedAt?: string;
 }
@@ -87,6 +95,10 @@ export class FileService {
     const response = await fetch(`${this.API_BASE}/items/${id}/preview`);
     if (!response.ok) throw new Error('Failed to get preview URL');
     return response.json();
+  }
+
+  static getVideoStreamUrl(id: string): string {
+    return `${this.API_BASE}/video/stream/${encodeURIComponent(id)}/index.m3u8`;
   }
 
   /**

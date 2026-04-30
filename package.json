@@ -6,12 +6,14 @@
   "main": "index.js",
   "workspaces": [
     "frontend",
-    "worker"
+    "worker",
+    "transcoder"
   ],
   "scripts": {
     "dev": "concurrently \"npm run dev --workspace=frontend\" \"npm run dev --workspace=worker\"",
     "dev:remote": "concurrently \"npm run dev --workspace=frontend\" \"npm run dev --workspace=worker -- --remote\"",
     "build": "npm run build --workspace=frontend",
+    "build:transcoder": "npm run build --workspace=transcoder",
     "deploy:worker": "npm run deploy --workspace=worker"
   },
   "keywords": [],

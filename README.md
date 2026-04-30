@@ -1,63 +1,186 @@
-# CloudNet: 基于 Cloudflare 全栈架构的个人网盘
+# CloudNet
 
-CloudNet 是一个利用 Cloudflare 现代开发者平台构建的轻量级个人网盘系统。本项目采用 Monorepo 架构，实现了文件的高效上传、下载及目录管理。
+CloudNet 是一个基于 Cloudflare 平台的个人网盘项目。它使用 R2 保存文件对象，D1 保存文件系统元数据，Worker 提供 API 与 HLS 代理，本地 `transcoder` 服务负责视频转码。
 
-## 🌟 核心特性
+当前已支持：
 
-- **高性能存储**：直接利用 Cloudflare R2 对象存储，通过 **S3 预签名 URL** 方案，让前端直接与存储桶通信，绕过 Worker 限制。
-- **轻量级 API**：后端基于 Cloudflare Worker 实现，极致的冷启动速度与低延迟。
-- **结构化元数据**：使用 Cloudflare D1 (SQLite) 存储文件目录树及元数据，支持复杂的目录层级查询。
-- **现代 UI**：前端采用 React + Tailwind CSS v4 构建，支持拖拽上传、面包屑导航及移动端适配。
+- 文件夹浏览、面包屑导航和拖拽上传。
+- 通过 R2 S3 预签名 URL 直传/下载文件。
+- 使用 D1 管理文件、文件夹和视频处理状态。
+- 上传视频后异步转码为 HLS。
+- 通过 Worker 代理播放私有 R2 中的 HLS 视频。
 
-## 🏗️ 项目架构
+## 项目结构
 
-项目采用 `npm workspaces` 进行管理：
+```text
+.
+├── frontend/      # React + Vite + TypeScript + Tailwind CSS v4
+├── worker/        # Cloudflare Worker API, D1, R2, HLS proxy
+├── transcoder/    # 本地 Node.js + FFmpeg 转码服务
+└── docs/          # 架构、数据库、部署文档和开发日志
+```
 
-- `/frontend`: React + Vite 前端应用。
-- `/worker`: Cloudflare Worker 后端 API 服务。
-- `/docs`: 开发日志与数据库设计方案。
+## 技术栈
 
-## 🚀 快速启动
+- Frontend: React, Vite, TypeScript, Tailwind CSS v4, hls.js
+- Worker: Cloudflare Workers, Native Fetch API
+- Database: Cloudflare D1
+- Storage: Cloudflare R2
+- Transcoding: Node.js, FFmpeg, FFprobe
+- Monorepo: npm workspaces
 
-### 1. 克隆并安装
+## 快速开始
+
+### 1. 安装依赖
+
 ```bash
-git clone <your-repo-url>
-cd netdisk
 npm install
 ```
 
-### 2. 配置后端 (Worker)
-进入 `worker` 目录：
-1. **初始化数据库**：
-   ```bash
-   npx wrangler d1 execute netdisk-db --local --file=schema.sql
-   ```
-2. **填充测试数据** (可选)：
-   ```bash
-   npx wrangler d1 execute netdisk-db --local --file=seed.sql
-   ```
-3. **配置本地密钥**：
-   在 `worker/` 下创建 `.dev.vars` 并填入你的 R2 凭据：
-   ```env
-   R2_ACCOUNT_ID=你的账号ID
-   R2_ACCESS_KEY_ID=你的R2访问ID
-   R2_SECRET_ACCESS_KEY=你的R2访问密钥
-   BUCKET_NAME=test
-   ```
+### 2. 配置 Worker 本地环境
 
-### 3. 运行开发环境
-在项目根目录下执行：
+在 `worker/.dev.vars` 中配置 R2 凭据：
+
+```env
+R2_ACCOUNT_ID=your-account-id
+R2_ACCESS_KEY_ID=your-r2-access-key
+R2_SECRET_ACCESS_KEY=your-r2-secret-key
+BUCKET_NAME=test
+```
+
+### 3. 初始化或迁移 D1
+
+新本地库可以直接初始化：
+
+```bash
+cd worker
+npx wrangler d1 execute netdisk-db --local --file=./schema.sql
+```
+
+已有本地库使用 migrations：
+
+```bash
+cd worker
+npx wrangler d1 migrations apply netdisk-db --local
+```
+
+远程 D1 使用：
+
+```bash
+cd worker
+npx wrangler d1 migrations apply netdisk-db --remote
+```
+
+### 4. 启动前端和 Worker
+
+在根目录执行：
+
 ```bash
 npm run dev
 ```
-前端将在 `http://localhost:5173` 启动，后端将在 `http://localhost:8787` 运行。
 
-## 🛠️ 技术栈
+默认地址：
 
-- **Frontend**: React, Vite, Tailwind CSS v4, Lucide Icons
-- **Backend**: Cloudflare Worker (Native Fetch API)
-- **Database**: Cloudflare D1 (SQL)
-- **Storage**: Cloudflare R2 (S3 Compatible)
+- Frontend: `http://localhost:5173`
+- Worker: `http://localhost:8787`
 
-## 📄 开源协议
+### 5. 启动本地转码服务
+
+需要先安装 `ffmpeg` 和 `ffprobe`。
+
+macOS:
+
+```bash
+brew install ffmpeg
+```
+
+配置 `transcoder/.dev.vars`：
+
+```env
+WORKER_API_BASE_URL=http://127.0.0.1:8787
+WORKER_CLAIM_PATH=/api/media/jobs/claim
+WORKER_RESULT_PATH_TEMPLATE=/api/items/{itemId}/video-metadata
+TRANSCODER_WORKER_ID=mac-mini-01
+R2_ACCOUNT_ID=your-account-id
+R2_BUCKET_NAME=test
+R2_ACCESS_KEY_ID=your-r2-access-key
+R2_SECRET_ACCESS_KEY=your-r2-secret-key
+```
+
+启动：
+
+```bash
+npm run dev --workspace=transcoder
+```
+
+## 云端联调
+
+前端连接已部署 Worker：
+
+```bash
+npm run dev:remote --workspace=frontend
+```
+
+本地 transcoder 连接已部署 Worker：
+
+```bash
+npm run dev:remote --workspace=transcoder
+```
+
+对应环境文件：
+
+- `frontend/.env.remote`
+- `transcoder/.env.remote.local`
+
+这些本地环境文件会被 `.gitignore` 忽略。
+
+## 常用命令
+
+```bash
+# 前端 + 本地 Worker
+npm run dev
+
+# 前端构建
+npm run build --workspace=frontend
+
+# Worker 测试
+npm run test --workspace=worker
+
+# Worker 部署
+npm run deploy:worker
+
+# transcoder 构建
+npm run build --workspace=transcoder
+```
+
+## 视频处理流程
+
+```text
+前端上传视频到 R2
+  -> Worker 创建 items 记录和 media_jobs 任务
+  -> transcoder 轮询 claim 任务
+  -> transcoder 从 R2 下载原片
+  -> FFmpeg 生成 HLS 和缩略图
+  -> transcoder 上传 hls/{itemId}/... 与 thumbnails/{itemId}.jpg
+  -> transcoder 回写 Worker
+  -> 前端通过 Worker HLS 代理播放
+```
+
+HLS 代理接口：
+
+```text
+GET /api/video/stream/:fileId/index.m3u8
+GET /api/video/stream/:fileId/:segmentName
+```
+
+## 文档
+
+- `docs/video-architecture.md`：视频转码与在线播放架构。
+- `docs/db.md`：D1 表结构、迁移和数据模型。
+- `docs/deploy.md`：Cloudflare 部署、远程联调和转码服务配置。
+- `docs/transcoder.md`：Mac Mini 上长期运行转码服务的操作流程。
+- `docs/daily.md`：开发日志。
+
+## License
+
 ISC License

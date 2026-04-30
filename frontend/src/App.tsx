@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from 'react'
-import { Upload, Download, File as FileIcon, X, HardDrive, Search, Plus, FileText, Image as ImageIcon, Archive, MoreVertical, ChevronRight, Folder, Eye } from 'lucide-react'
+import { Upload, Download, File as FileIcon, X, HardDrive, Search, Plus, FileText, Image as ImageIcon, Archive, MoreVertical, ChevronRight, Folder, Eye, Video, PlayCircle, RefreshCw } from 'lucide-react'
 import { FileService, type FileItem } from './api/fileService'
 
 function App() {
@@ -10,12 +10,48 @@ function App() {
   const [currentParentId, setCurrentParentId] = useState<string>('root');
   const [pathStack, setPathStack] = useState<{id: string, name: string}[]>([]);
   const [previewFile, setPreviewFile] = useState<{url: string, name: string} | null>(null);
+  const [videoFile, setVideoFile] = useState<FileItem | null>(null);
+  const videoRef = useRef<HTMLVideoElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // 初始化加载文件列表
   useEffect(() => {
     fetchFiles(currentParentId);
   }, [currentParentId]);
+
+  useEffect(() => {
+    if (!videoFile || !videoRef.current) return;
+
+    const video = videoRef.current;
+    const streamUrl = FileService.getVideoStreamUrl(videoFile.id);
+    let cancelled = false;
+    let destroyHls: (() => void) | undefined;
+
+    if (video.canPlayType('application/vnd.apple.mpegurl')) {
+      video.src = streamUrl;
+      video.load();
+    } else {
+      import('hls.js').then(({ default: Hls }) => {
+        if (cancelled || !Hls.isSupported()) return;
+
+        const hls = new Hls({
+          enableWorker: true,
+          lowLatencyMode: false,
+        });
+
+        hls.loadSource(streamUrl);
+        hls.attachMedia(video);
+        destroyHls = () => hls.destroy();
+      });
+    }
+
+    return () => {
+      cancelled = true;
+      destroyHls?.();
+      video.removeAttribute('src');
+      video.load();
+    };
+  }, [videoFile]);
 
   const fetchFiles = async (parentId: string) => {
     setLoading(true);
@@ -62,7 +98,7 @@ function App() {
       // 1. 获取预签名 URL
       // 后端现在会返回它用来签名的 contentType
       const { id, uploadUrl, r2Key, contentType } = await FileService.getUploadUrl(file.name, file.size, file.type, currentParentId);
-      
+
       // 2. 上传到 R2
       // 必须传递签名时使用的 contentType
       await FileService.uploadToR2(uploadUrl, file, contentType);
@@ -76,7 +112,7 @@ function App() {
         contentType: contentType || file.type,
         r2Key
       });
-      
+
       // 4. 刷新列表
       fetchFiles(currentParentId);
     } catch (error) {
@@ -117,8 +153,25 @@ function App() {
       handleEnterFolder(file);
       return;
     }
-    
+
     const isImage = (file.contentType || '').startsWith('image/');
+    const isVideo = file.mediaType === 'video' || (file.contentType || '').startsWith('video/');
+
+    if (isVideo) {
+      if (file.videoStatus === 'completed') {
+        setVideoFile(file);
+        return;
+      }
+
+      if (file.videoStatus === 'failed') {
+        alert(file.videoError || 'Video processing failed.');
+        return;
+      }
+
+      alert('Video is still processing. Refresh the file list in a moment.');
+      return;
+    }
+
     if (isImage) {
       try {
         const { url } = await FileService.getPreviewUrl(file.id);
@@ -166,19 +219,29 @@ function App() {
 
   const getFileIcon = (file: FileItem) => {
     if (file.type === 'folder') return <Folder className="w-5 h-5 text-indigo-500 fill-indigo-50" />;
-    
+
     const t = (file.contentType || '').toUpperCase();
     if (t.includes('PDF')) return <FileText className="w-5 h-5 text-red-500" />;
     if (t.includes('IMAGE') || ['JPG', 'PNG', 'WEBP'].includes(t)) return <ImageIcon className="w-5 h-5 text-blue-500" />;
+    if (t.includes('VIDEO')) return <Video className="w-5 h-5 text-emerald-500" />;
     if (t.includes('ZIP') || t.includes('ARCHIVE') || t.includes('OCTET-STREAM')) return <Archive className="w-5 h-5 text-amber-500" />;
     return <FileIcon className="w-5 h-5 text-slate-400" />;
+  };
+
+  const getVideoStatusLabel = (file: FileItem) => {
+    if (file.mediaType !== 'video' && !(file.contentType || '').startsWith('video/')) return null;
+    if (!file.videoStatus) return null;
+    if (file.videoStatus === 'completed') return 'Ready to play';
+    if (file.videoStatus === 'failed') return 'Processing failed';
+    if (file.videoStatus === 'processing') return 'Processing';
+    return 'Queued';
   };
 
   return (
     <div className="min-h-screen bg-[#f8fafc] text-slate-900 font-sans selection:bg-indigo-100">
       {/* Full page drag overlay */}
       {dragActive && (
-        <div 
+        <div
           className="fixed inset-0 z-50 bg-indigo-600/90 backdrop-blur-sm flex flex-col items-center justify-center text-white p-6 transition-all duration-300"
           onDragEnter={handleDrag}
           onDragLeave={handleDrag}
@@ -197,27 +260,67 @@ function App() {
 
       {/* Image Preview Modal */}
       {previewFile && (
-        <div 
+        <div
           className="fixed inset-0 z-[60] bg-slate-900/90 backdrop-blur-md flex items-center justify-center p-4 sm:p-10"
           onClick={() => setPreviewFile(null)}
         >
-          <button 
+          <button
             className="absolute top-6 right-6 p-3 bg-white/10 hover:bg-white/20 text-white rounded-full transition-all"
             onClick={() => setPreviewFile(null)}
           >
             <X className="w-6 h-6" />
           </button>
-          <div 
+          <div
             className="relative max-w-full max-h-full flex flex-col items-center gap-4"
             onClick={e => e.stopPropagation()}
           >
-            <img 
-              src={previewFile.url} 
-              alt={previewFile.name} 
+            <img
+              src={previewFile.url}
+              alt={previewFile.name}
               className="max-w-full max-h-[80vh] rounded-lg shadow-2xl object-contain bg-white/5"
             />
             <div className="bg-white/10 backdrop-blur-md px-6 py-3 rounded-full border border-white/10">
               <p className="text-white font-medium text-sm">{previewFile.name}</p>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {videoFile && (
+        <div
+          className="fixed inset-0 z-[60] bg-slate-950/95 backdrop-blur-md flex items-center justify-center p-4 sm:p-8"
+          onClick={() => setVideoFile(null)}
+        >
+          <button
+            className="absolute top-6 right-6 p-3 bg-white/10 hover:bg-white/20 text-white rounded-full transition-all"
+            onClick={() => setVideoFile(null)}
+          >
+            <X className="w-6 h-6" />
+          </button>
+          <div
+            className="w-full max-w-5xl flex flex-col gap-4"
+            onClick={e => e.stopPropagation()}
+          >
+            <video
+              ref={videoRef}
+              controls
+              playsInline
+              className="w-full max-h-[78vh] bg-black rounded-lg shadow-2xl"
+            />
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-white/10 backdrop-blur-md px-5 py-3 rounded-xl border border-white/10">
+              <div className="min-w-0">
+                <p className="text-white font-semibold text-sm truncate">{videoFile.name}</p>
+                <p className="text-slate-300 text-xs">
+                  {[videoFile.duration ? `${videoFile.duration}s` : null, videoFile.width && videoFile.height ? `${videoFile.width}x${videoFile.height}` : null].filter(Boolean).join(' / ') || 'HLS'}
+                </p>
+              </div>
+              <button
+                onClick={() => handleDownload(videoFile)}
+                className="flex items-center justify-center gap-2 text-sm font-semibold text-white hover:bg-white/15 bg-white/10 border border-white/10 px-4 py-2 rounded-lg transition-all"
+              >
+                <Download className="w-4 h-4" />
+                Download
+              </button>
             </div>
           </div>
         </div>
@@ -232,7 +335,7 @@ function App() {
             </div>
             <span className="font-bold text-lg tracking-tight bg-clip-text text-transparent bg-gradient-to-r from-slate-900 to-slate-600">CloudNet</span>
           </div>
-          
+
           <div className="flex items-center gap-4">
             <div className="h-4 w-[1px] bg-slate-200 hidden md:block"></div>
             <div className="text-xs font-medium text-slate-400 hidden sm:block">
@@ -247,13 +350,13 @@ function App() {
         </div>
       </nav>
 
-      <main 
+      <main
         className="max-w-6xl mx-auto px-6 py-10 space-y-8"
         onDragEnter={handleDrag}
       >
         {/* Breadcrumbs */}
         <nav className="flex items-center gap-2 text-sm font-medium text-slate-500 overflow-x-auto whitespace-nowrap pb-2">
-          <button 
+          <button
             onClick={() => handleNavigateBack(-1)}
             className={`hover:text-indigo-600 transition-colors ${currentParentId === 'root' ? 'text-indigo-600 font-bold' : ''}`}
           >
@@ -262,7 +365,7 @@ function App() {
           {pathStack.map((folder, index) => (
             <div key={folder.id} className="flex items-center gap-2">
               <ChevronRight className="w-4 h-4 text-slate-300" />
-              <button 
+              <button
                 onClick={() => handleNavigateBack(index)}
                 className={`hover:text-indigo-600 transition-colors ${index === pathStack.length - 1 ? 'text-indigo-600 font-bold' : ''}`}
               >
@@ -279,32 +382,32 @@ function App() {
               <h2 className="text-2xl font-bold text-slate-900 tracking-tight">Files & Folders</h2>
               <p className="text-slate-500 text-sm font-medium">Manage your cloud storage</p>
             </div>
-            
+
             <div className="flex flex-wrap items-center gap-3">
               <div className="relative group flex-1 min-w-[200px] sm:flex-none">
                 <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-indigo-500 transition-colors" />
-                <input 
-                  type="text" 
-                  placeholder="Quick search..." 
+                <input
+                  type="text"
+                  placeholder="Quick search..."
                   className="pl-10 pr-4 py-2 bg-white border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500 transition-all w-full sm:w-64 shadow-sm"
                 />
               </div>
 
               <div className="flex items-center gap-2">
-                <button 
+                <button
                   onClick={handleCreateFolder}
                   className="flex items-center gap-2 text-sm font-semibold text-slate-600 hover:text-indigo-600 bg-white border border-slate-200 px-4 py-2 rounded-xl transition-all shadow-sm active:scale-95"
                 >
                   <Plus className="w-4 h-4" />
                   <span className="hidden sm:inline">New Folder</span>
                 </button>
-                <input 
+                <input
                   ref={fileInputRef}
-                  type="file" 
-                  className="hidden" 
+                  type="file"
+                  className="hidden"
                   onChange={handleChange}
                 />
-                <button 
+                <button
                   onClick={() => fileInputRef.current?.click()}
                   className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-xl text-sm font-semibold transition-all shadow-sm shadow-indigo-100 active:scale-95"
                 >
@@ -328,7 +431,7 @@ function App() {
                 </thead>
                 <tbody className="divide-y divide-slate-100">
                   {currentParentId !== 'root' && !loading && (
-                    <tr 
+                    <tr
                       onDoubleClick={handleGoUp}
                       className="hover:bg-slate-50/80 transition-all group cursor-pointer"
                     >
@@ -355,8 +458,8 @@ function App() {
                       </td>
                     </tr>
                   ) : files.map((file) => (
-                    <tr 
-                      key={file.id} 
+                    <tr
+                      key={file.id}
                       onClick={() => handlePreview(file)}
                       onDoubleClick={() => handleEnterFolder(file)}
                       className="hover:bg-slate-50/80 transition-all group cursor-pointer"
@@ -368,7 +471,18 @@ function App() {
                           </div>
                           <div className="min-w-0">
                             <p className="font-semibold text-slate-700 text-sm group-hover:text-indigo-600 transition-colors truncate">{file.name}</p>
-                            <p className="text-[11px] text-slate-400 font-medium uppercase tracking-wider">{file.type}</p>
+                            <div className="flex flex-wrap items-center gap-2">
+                              <p className="text-[11px] text-slate-400 font-medium uppercase tracking-wider">{file.type}</p>
+                              {getVideoStatusLabel(file) && (
+                                <span className={`text-[10px] font-bold uppercase tracking-wider ${
+                                  file.videoStatus === 'completed' ? 'text-emerald-600' :
+                                  file.videoStatus === 'failed' ? 'text-red-500' :
+                                  'text-amber-500'
+                                }`}>
+                                  {getVideoStatusLabel(file)}
+                                </span>
+                              )}
+                            </div>
                           </div>
                         </div>
                       </td>
@@ -382,13 +496,21 @@ function App() {
                         <div className="flex items-center justify-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
                           {file.type === 'file' && (
                             <>
-                              <button 
+                              <button
                                 onClick={(e) => { e.stopPropagation(); handlePreview(file); }}
                                 className="p-2 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-all" title="Preview"
                               >
-                                <Eye className="w-4 h-4" />
+                                {file.videoStatus === 'completed' ? <PlayCircle className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                               </button>
-                              <button 
+                              {(file.videoStatus === 'pending' || file.videoStatus === 'processing') && (
+                                <button
+                                  onClick={(e) => { e.stopPropagation(); fetchFiles(currentParentId); }}
+                                  className="p-2 text-slate-400 hover:text-amber-600 hover:bg-amber-50 rounded-lg transition-all" title="Refresh"
+                                >
+                                  <RefreshCw className="w-4 h-4" />
+                                </button>
+                              )}
+                              <button
                                 onClick={(e) => { e.stopPropagation(); handleDownload(file); }}
                                 className="p-2 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-all" title="Download"
                               >
@@ -396,7 +518,7 @@ function App() {
                               </button>
                             </>
                           )}
-                          <button 
+                          <button
                             onClick={(e) => { e.stopPropagation(); handleDelete(file.id); }}
                             className="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-all" title="Delete"
                           >
@@ -412,7 +534,7 @@ function App() {
                 </tbody>
               </table>
             </div>
-            
+
             {!loading && files.length === 0 && (
               <div className="py-24 flex flex-col items-center text-center">
                 <div className="inline-flex p-8 rounded-full bg-slate-50 text-slate-200 mb-6 border-4 border-white shadow-inner">
@@ -423,14 +545,14 @@ function App() {
                   This folder is empty. Start by creating a new folder or uploading some files.
                 </p>
                 <div className="flex gap-3">
-                  <button 
+                  <button
                     onClick={handleCreateFolder}
                     className="flex items-center gap-2 text-sm font-semibold text-slate-600 hover:text-indigo-600 bg-white border border-slate-200 px-6 py-2.5 rounded-xl transition-all shadow-sm"
                   >
                     <Plus className="w-4 h-4" />
                     New Folder
                   </button>
-                  <button 
+                  <button
                     onClick={() => fileInputRef.current?.click()}
                     className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white px-6 py-2.5 rounded-xl text-sm font-semibold transition-all shadow-sm shadow-indigo-100"
                   >
@@ -440,7 +562,7 @@ function App() {
                 </div>
               </div>
             )}
-            
+
             <div className="px-8 py-4 bg-slate-50/50 border-t border-slate-100 flex items-center justify-between">
               <span className="text-xs text-slate-400 font-medium">{files.length} items in this directory</span>
             </div>
