@@ -1226,3 +1226,91 @@ Mac Mini 上通过 `launchd` 常驻运行 transcoder 时，日志出现 `spawn f
 ### TODO(如果需要的话，一些将来可以做的事情)
 
 - 后续可以进一步梳理文件行单击、双击和右键菜单的完整交互模型，为多选和批量操作预留清晰边界。
+
+## 2026-05-01 默认禁用 Transcoder 空闲日志
+### 背景
+
+Transcoder 长期后台运行时，空闲轮询日志即使做了限频，对常驻服务来说价值仍然有限，主要会让日志文件持续积累。
+
+### 目标
+
+默认不输出无任务状态日志，只保留任务开始、完成、失败和轮询错误等有行为或异常价值的日志；需要观察轮询健康状态时再显式开启空闲日志。
+
+### 采用的修改
+
+1. 新增 `TRANSCODER_IDLE_LOG_INTERVAL_MS` 配置项。
+2. 将默认值设为 `0`，表示禁用 `No pending media job` 空闲日志。
+3. 当 `TRANSCODER_IDLE_LOG_INTERVAL_MS` 大于 `0` 时，才按指定毫秒间隔限频输出空闲日志。
+4. 服务启动日志增加当前空闲日志间隔，方便确认运行配置。
+5. 同步更新 `transcoder/.env.example` 和 `docs/transcoder.md` 的示例与说明。
+
+### 结果
+
+- 空闲状态下默认不再写 `No pending media job` 日志。
+- 如需临时观察空闲轮询，可在 `.env.remote.local` 或 `.dev.vars` 中设置 `TRANSCODER_IDLE_LOG_INTERVAL_MS` 为大于 `0` 的毫秒数。
+
+### 本次的最佳实践总结
+
+常驻后台任务的日志默认应记录状态变化、业务动作和异常，而不是持续记录“无事发生”。低价值健康日志应显式开启，并通过配置控制输出频率。
+
+### TODO(如果需要的话，一些将来可以做的事情)
+
+- 如果后续轮询错误日志也出现大量积累，可以为重复错误增加独立限频或合并计数输出。
+
+## 2026-05-01 明确 Transcoder 启动确认日志
+### 背景
+
+禁用空闲日志后，Transcoder 在长期无任务时不会持续输出日志。需要保留一条启动时的确认日志，用于判断后台服务是否确实启动并进入轮询。
+
+### 目标
+
+在不恢复空闲日志刷屏的前提下，让服务启动时输出明确、可识别的启动成功日志。
+
+### 采用的修改
+
+1. 将启动日志文案改为 `Transcoder service started and polling`。
+2. 启动日志增加 `idleIntervalMs` 和 `idleLogEnabled` 字段，方便确认当前轮询与日志配置。
+3. 更新 `docs/transcoder.md`，说明启动日志会立即输出，默认空闲状态不会继续输出日志。
+
+### 结果
+
+- Transcoder 启动后会固定输出一条启动确认日志。
+- 空闲状态仍默认静默，不会写入 `No pending media job`。
+
+### 本次的最佳实践总结
+
+常驻进程应在启动时输出一条低频但明确的生命周期日志。这样既能确认服务已启动，又不会用重复的空闲日志增加长期运维成本。
+
+### TODO(如果需要的话，一些将来可以做的事情)
+
+- 后续可以为启动日志补充版本号或 git commit，方便排查后台服务是否运行了最新构建。
+
+## 2026-05-01 恢复 Transcoder stdout/stderr 日志方案
+### 背景
+
+此前尝试让 Transcoder 应用自身直接写入项目内日志文件，但这会让应用承担日志落盘职责，不符合“应用输出 stdout/stderr，由运行器管理日志文件”的长期维护方式。
+
+### 目标
+
+恢复为 Transcoder 只写 stdout/stderr，日志文件路径交给 launchd 的 `StandardOutPath` 和 `StandardErrorPath` 管理；当前为了和本机其他 plist 保持一致，日志路径暂时继续使用 `/tmp`。
+
+### 采用的修改
+
+1. 移除 `logger` 中的应用内文件追加写入逻辑。
+2. 移除 `TRANSCODER_LOG_DIR` 示例配置和启动日志中的 `logFilePath` 字段。
+3. 将文档中的日志查看方式恢复为 `/tmp/cloudnet-transcoder.out.log` 和 `/tmp/cloudnet-transcoder.err.log`。
+4. 将当前实际使用的 `backendjob.cloudnet-transcoder.nodejs.plist` 日志路径改回 `/tmp` 并重启服务。
+
+### 结果
+
+- Transcoder 后台服务已恢复 running。
+- 启动日志已写入 `/tmp/cloudnet-transcoder.out.log`。
+- 应用日志职责回到 stdout/stderr，launchd 负责文件重定向。
+
+### 本次的最佳实践总结
+
+应用进程优先只负责输出结构化、可读的 stdout/stderr；日志文件路径、保留位置和轮转策略应由运行环境管理。临时沿用 `/tmp` 可以保持本机配置一致，但长期仍应迁移到更稳定的日志目录。
+
+### TODO(如果需要的话，一些将来可以做的事情)
+
+- 后续统一梳理所有 LaunchAgent 的日志路径，再一起从 `/tmp` 迁移到 `~/Library/Logs/` 并配置轮转。
