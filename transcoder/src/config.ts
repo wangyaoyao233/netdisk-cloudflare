@@ -45,6 +45,7 @@ export interface AppConfig {
   workerId: string;
   pollIntervalMs: number;
   idleIntervalMs: number;
+  idleLogIntervalMs: number;
   errorIntervalMs: number;
   tempDir: string;
   keepWorkdir: boolean;
@@ -73,6 +74,7 @@ export function loadConfig(): AppConfig {
     workerId: process.env.TRANSCODER_WORKER_ID || "mac-mini-01",
     pollIntervalMs: readNumber("TRANSCODER_POLL_INTERVAL_MS", 5000),
     idleIntervalMs: readNumber("TRANSCODER_IDLE_INTERVAL_MS", 10000),
+    idleLogIntervalMs: readNumber("TRANSCODER_IDLE_LOG_INTERVAL_MS", 0),
     errorIntervalMs: readNumber("TRANSCODER_ERROR_INTERVAL_MS", 30000),
     tempDir,
     keepWorkdir: readBoolean("TRANSCODER_KEEP_WORKDIR", false),

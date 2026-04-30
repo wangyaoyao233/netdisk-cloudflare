@@ -15,7 +15,9 @@ transcoder 本地常驻运行
 
 无任务时服务会等待一段时间继续轮询；有任务时会自动处理。
 
-空闲状态不会每轮都写日志。当前实现会对 `No pending media job` 做限频，默认最多约每 10 分钟输出一次，避免长期运行时日志快速增长。
+服务启动时会输出一条 `Transcoder service started and polling` 日志，用于确认进程已启动并开始轮询。
+
+空闲状态默认不输出 `No pending media job` 日志，避免长期运行时日志文件持续增长。如需观察轮询健康状态，可通过 `TRANSCODER_IDLE_LOG_INTERVAL_MS` 设置空闲日志输出间隔。
 
 ## 2. 运行模式
 
@@ -74,6 +76,7 @@ WORKER_RESULT_PATH_TEMPLATE=/api/items/{itemId}/video-metadata
 TRANSCODER_WORKER_ID=mac-mini-01
 TRANSCODER_POLL_INTERVAL_MS=5000
 TRANSCODER_IDLE_INTERVAL_MS=10000
+TRANSCODER_IDLE_LOG_INTERVAL_MS=0
 TRANSCODER_ERROR_INTERVAL_MS=30000
 TRANSCODER_TEMP_DIR=.tmp
 TRANSCODER_KEEP_WORKDIR=false
@@ -98,6 +101,7 @@ WORKER_RESULT_PATH_TEMPLATE=/api/items/{itemId}/video-metadata
 TRANSCODER_WORKER_ID=mac-mini-01
 TRANSCODER_POLL_INTERVAL_MS=5000
 TRANSCODER_IDLE_INTERVAL_MS=10000
+TRANSCODER_IDLE_LOG_INTERVAL_MS=0
 TRANSCODER_ERROR_INTERVAL_MS=30000
 TRANSCODER_TEMP_DIR=.tmp
 TRANSCODER_KEEP_WORKDIR=false
@@ -206,14 +210,15 @@ tail -f /tmp/cloudnet-transcoder.out.log
 tail -f /tmp/cloudnet-transcoder.err.log
 ```
 
-正常空闲时会看到类似：
+服务启动后会立即输出 `Transcoder service started and polling`。默认空闲时不会继续输出日志；任务开始、完成、失败和轮询错误会立即记录。
 
-```text
-[INFO] Transcoder service started
-[INFO] No pending media job {"idleClaims":1,"nextPollInMs":10000}
+如需临时观察空闲轮询状态，可以设置 `TRANSCODER_IDLE_LOG_INTERVAL_MS` 为大于 0 的毫秒数，例如每 1 小时输出一次：
+
+```env
+TRANSCODER_IDLE_LOG_INTERVAL_MS=3600000
 ```
 
-空闲日志默认会限频输出；任务开始、完成、失败和轮询错误仍会立即记录。
+启用后会按该间隔限频输出 `No pending media job`。
 
 ### 6.5 停止服务
 

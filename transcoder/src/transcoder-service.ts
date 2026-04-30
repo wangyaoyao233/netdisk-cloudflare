@@ -10,7 +10,6 @@ import { VideoProcessor } from "./video-processor.js";
 import { WorkerClient } from "./worker-client.js";
 
 export class TranscoderService {
-  private static readonly idleLogIntervalMs = 10 * 60 * 1000;
   private lastIdleLogAt = 0;
   private consecutiveIdleClaims = 0;
 
@@ -22,10 +21,13 @@ export class TranscoderService {
   ) {}
 
   async start(): Promise<void> {
-    logger.info("Transcoder service started", {
+    logger.info("Transcoder service started and polling", {
       workerId: this.config.workerId,
       workerApiBaseUrl: this.config.workerApiBaseUrl,
       pollIntervalMs: this.config.pollIntervalMs,
+      idleIntervalMs: this.config.idleIntervalMs,
+      idleLogEnabled: this.config.idleLogIntervalMs > 0,
+      idleLogIntervalMs: this.config.idleLogIntervalMs,
     });
 
     for (;;) {
@@ -49,10 +51,14 @@ export class TranscoderService {
   }
 
   private logIdleIfNeeded(): void {
+    if (this.config.idleLogIntervalMs === 0) {
+      return;
+    }
+
     this.consecutiveIdleClaims += 1;
 
     const now = Date.now();
-    if (now - this.lastIdleLogAt < TranscoderService.idleLogIntervalMs) {
+    if (now - this.lastIdleLogAt < this.config.idleLogIntervalMs) {
       return;
     }
 
