@@ -60,7 +60,7 @@ export function AppDialog({ dialog, onClose }: AppDialogProps) {
 
   return (
     <div
-      className="fixed inset-0 z-[70] flex items-center justify-center bg-slate-950/40 px-4 py-8 backdrop-blur-sm"
+      className="fixed inset-0 z-[70] flex select-none items-center justify-center bg-slate-950/40 px-4 py-8 backdrop-blur-sm"
     >
       <div className="w-full max-w-md overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-2xl shadow-slate-900/20">
         <div className="flex items-start gap-4 border-b border-slate-100 px-6 py-5">
@@ -94,7 +94,7 @@ export function AppDialog({ dialog, onClose }: AppDialogProps) {
                 }
               }}
               placeholder={dialog.placeholder}
-              className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-medium text-slate-700 outline-none transition-all placeholder:text-slate-400 focus:border-indigo-500 focus:bg-white focus:ring-4 focus:ring-indigo-500/10"
+              className="w-full select-text rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-medium text-slate-700 outline-none transition-all placeholder:text-slate-400 focus:border-indigo-500 focus:bg-white focus:ring-4 focus:ring-indigo-500/10"
             />
           </div>
         )}
