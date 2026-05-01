@@ -29,6 +29,16 @@ export interface DownloadUrlResponse {
   url: string;
 }
 
+export class FileServiceError extends Error {
+  status: number;
+
+  constructor(message: string, status: number) {
+    super(message);
+    this.name = 'FileServiceError';
+    this.status = status;
+  }
+}
+
 /**
  * 文件服务 API 类
  * 对接 Cloudflare Worker 后端
@@ -115,6 +125,21 @@ export class FileService {
       body: JSON.stringify({ name, parentId })
     });
     if (!response.ok) throw new Error('Failed to create folder');
+    return response.json();
+  }
+
+  /**
+   * 重命名文件或文件夹
+   */
+  static async renameItem(id: string, name: string): Promise<FileItem> {
+    const response = await fetch(`${this.API_BASE}/items/${encodeURIComponent(id)}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name })
+    });
+    if (!response.ok) {
+      throw new FileServiceError(await response.text() || 'Failed to rename item', response.status);
+    }
     return response.json();
   }
 

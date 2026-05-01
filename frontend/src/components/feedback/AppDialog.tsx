@@ -16,6 +16,7 @@ export type AppDialogState =
       title: string;
       message: string;
       placeholder?: string;
+      initialValue?: string;
       confirmLabel?: string;
       cancelLabel?: string;
       onConfirm: (value: string) => void | Promise<void>;
@@ -31,7 +32,7 @@ export function AppDialog({ dialog, onClose }: AppDialogProps) {
   const [submitting, setSubmitting] = useState(false);
 
   useEffect(() => {
-    setInputValue('');
+    setInputValue(dialog?.type === 'input' ? dialog.initialValue ?? '' : '');
     setSubmitting(false);
   }, [dialog]);
 

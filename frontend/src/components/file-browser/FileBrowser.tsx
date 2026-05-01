@@ -1,4 +1,4 @@
-import { Download, Eye, Folder, MoreVertical, PlayCircle, Plus, RefreshCw, Search, Upload, X } from 'lucide-react'
+import { Download, Eye, Folder, MoreVertical, Pencil, PlayCircle, Plus, RefreshCw, Search, Upload, X } from 'lucide-react'
 import { useRef } from 'react'
 import type { ChangeEvent, PointerEvent, RefObject } from 'react'
 import { FileService, type FileItem } from '../../api/fileService'
@@ -18,6 +18,7 @@ interface FileBrowserProps {
   onGoUp: () => void;
   onRefresh: () => void;
   onDownload: (file: FileItem) => void;
+  onRename: (file: FileItem) => void;
   onDelete: (id: string) => void;
 }
 
@@ -34,6 +35,7 @@ export function FileBrowser({
   onGoUp,
   onRefresh,
   onDownload,
+  onRename,
   onDelete,
 }: FileBrowserProps) {
   const pointerStartRef = useRef<{ x: number; y: number } | null>(null);
@@ -230,6 +232,12 @@ export function FileBrowser({
                             </button>
                           </>
                         )}
+                        <button
+                          onClick={(event) => { event.stopPropagation(); onRename(file); }}
+                          className="p-2 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-all" title="Rename"
+                        >
+                          <Pencil className="w-4 h-4" />
+                        </button>
                         <button
                           onClick={(event) => { event.stopPropagation(); onDelete(file.id); }}
                           className="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-all" title="Delete"

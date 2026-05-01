@@ -103,6 +103,10 @@ function isImageContentType(contentType?: string): boolean {
 	return Boolean(contentType?.toLowerCase().startsWith('image/'));
 }
 
+function normalizeItemName(name: unknown): string {
+	return typeof name === 'string' ? name.trim() : '';
+}
+
 async function deleteR2Prefix(bucket: R2Bucket, prefix: string): Promise<void> {
 	let cursor: string | undefined;
 
@@ -213,6 +217,38 @@ export default {
 				}
 
 				return jsonResponse({ id, name, parentId, type: 'file' }, 201);
+			}
+
+			// 重命名项目: PATCH /api/items/:id
+			if (path.startsWith('/api/items/') && method === 'PATCH' && path.split('/').length === 4) {
+				const id = path.split('/')[3];
+				if (!id) return errorResponse('Missing item ID', 400);
+
+				const { name } = await request.json() as { name?: string };
+				const nextName = normalizeItemName(name);
+				if (!nextName) return errorResponse('Missing item name', 400);
+
+				const item = await env.DB.prepare(
+					'SELECT id, parentId, name FROM items WHERE id = ?'
+				).bind(id).first<ItemMetadata>();
+				if (!item) return errorResponse('Item not found', 404);
+
+				if (item.name === nextName) {
+					const unchanged = await env.DB.prepare('SELECT * FROM items WHERE id = ?').bind(id).first<ItemMetadata>();
+					return jsonResponse(unchanged);
+				}
+
+				const duplicate = await env.DB.prepare(
+					'SELECT id FROM items WHERE parentId = ? AND name = ? AND id != ? LIMIT 1'
+				).bind(item.parentId || 'root', nextName, id).first<{ id: string }>();
+				if (duplicate) return errorResponse('An item with this name already exists', 409);
+
+				await env.DB.prepare(
+					'UPDATE items SET name = ?, updatedAt = CURRENT_TIMESTAMP WHERE id = ?'
+				).bind(nextName, id).run();
+
+				const updated = await env.DB.prepare('SELECT * FROM items WHERE id = ?').bind(id).first<ItemMetadata>();
+				return jsonResponse(updated);
 			}
 
 			// 领取视频转码任务: POST /api/media/jobs/claim
