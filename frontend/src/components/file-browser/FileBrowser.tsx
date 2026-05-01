@@ -176,7 +176,13 @@ export function FileBrowser({
 
       <div className="bg-white rounded-3xl border border-slate-200/60 shadow-sm shadow-slate-200/50 overflow-hidden">
         <div className="overflow-x-auto">
-          <table className="w-full text-left border-collapse">
+          <table className="w-full min-w-[720px] table-fixed text-left border-collapse">
+            <colgroup>
+              <col className="w-[52%]" />
+              <col className="w-32" />
+              <col className="w-40" />
+              <col className="w-28" />
+            </colgroup>
             <thead>
               <tr className="border-b border-slate-100 bg-slate-50/30">
                 <th className="px-8 py-5 text-[11px] font-bold text-slate-400 uppercase tracking-[0.1em]">Name</th>
@@ -230,11 +236,11 @@ export function FileBrowser({
                     className="hover:bg-slate-50/80 transition-all group cursor-pointer select-none"
                   >
                     <td className="px-8 py-5">
-                      <div className="flex items-center gap-4">
+                      <div className="flex min-w-0 items-center gap-4">
                         <FileThumbnail file={file} fallbackIcon={getFileIcon(file)} />
                         <div className="min-w-0">
-                          <p className="font-semibold text-slate-700 text-sm group-hover:text-indigo-600 transition-colors truncate">{file.name}</p>
-                          <div className="flex flex-wrap items-center gap-2">
+                          <p className="truncate font-semibold text-sm text-slate-700 transition-colors group-hover:text-indigo-600" title={file.name}>{file.name}</p>
+                          <div className="flex min-w-0 flex-wrap items-center gap-2">
                             <p className="text-[11px] text-slate-400 font-medium uppercase tracking-wider">{file.type}</p>
                             {videoStatusLabel && (
                               <span className={`text-[10px] font-bold uppercase tracking-wider ${
