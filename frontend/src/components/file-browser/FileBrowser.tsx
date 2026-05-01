@@ -1,5 +1,5 @@
-import { Download, Eye, Folder, MoreVertical, Pencil, PlayCircle, Plus, RefreshCw, Search, Upload, X } from 'lucide-react'
-import { useRef } from 'react'
+import { Download, Eye, Folder, MoreVertical, Pencil, PlayCircle, Plus, RefreshCw, Search, Trash2, Upload } from 'lucide-react'
+import { useEffect, useRef, useState } from 'react'
 import type { ChangeEvent, PointerEvent, RefObject } from 'react'
 import { FileService, type FileItem } from '../../api/fileService'
 import { getFileIcon, getVideoStatusLabel } from '../../utils/fileMedia'
@@ -38,9 +38,26 @@ export function FileBrowser({
   onRename,
   onDelete,
 }: FileBrowserProps) {
+  const [openActionMenuId, setOpenActionMenuId] = useState<string | null>(null);
   const pointerStartRef = useRef<{ x: number; y: number } | null>(null);
   const didDragRef = useRef(false);
   const dragThreshold = 6;
+
+  useEffect(() => {
+    if (!openActionMenuId) return;
+
+    const closeActionMenu = () => setOpenActionMenuId(null);
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') closeActionMenu();
+    };
+
+    document.addEventListener('click', closeActionMenu);
+    document.addEventListener('keydown', handleKeyDown);
+    return () => {
+      document.removeEventListener('click', closeActionMenu);
+      document.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [openActionMenuId]);
 
   const handleRowPointerDown = (event: PointerEvent<HTMLTableRowElement>) => {
     pointerStartRef.current = { x: event.clientX, y: event.clientY };
@@ -206,8 +223,10 @@ export function FileBrowser({
                     <td className="px-8 py-5 text-sm text-slate-400 font-medium">
                       {file.createdAt ? new Date(file.createdAt).toLocaleDateString() : '--'}
                     </td>
-                    <td className="px-8 py-5 text-right">
-                      <div className="flex items-center justify-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                    <td className="relative px-8 py-5 text-right">
+                      <div className={`flex items-center justify-end gap-1 transition-opacity ${
+                        openActionMenuId === file.id ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'
+                      }`}>
                         {file.type === 'file' && (
                           <>
                             <button
@@ -224,29 +243,70 @@ export function FileBrowser({
                                 <RefreshCw className="w-4 h-4" />
                               </button>
                             )}
-                            <button
-                              onClick={(event) => { event.stopPropagation(); onDownload(file); }}
-                              className="p-2 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-all" title="Download"
-                            >
-                              <Download className="w-4 h-4" />
-                            </button>
                           </>
                         )}
-                        <button
-                          onClick={(event) => { event.stopPropagation(); onRename(file); }}
-                          className="p-2 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-all" title="Rename"
-                        >
-                          <Pencil className="w-4 h-4" />
-                        </button>
-                        <button
-                          onClick={(event) => { event.stopPropagation(); onDelete(file.id); }}
-                          className="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-all" title="Delete"
-                        >
-                          <X className="w-4 h-4" />
-                        </button>
-                        <button className="p-2 text-slate-400 hover:bg-slate-100 rounded-lg transition-all" onClick={event => event.stopPropagation()}>
-                          <MoreVertical className="w-4 h-4" />
-                        </button>
+                        <div className="relative">
+                          <button
+                            type="button"
+                            className={`p-2 rounded-lg transition-all ${
+                              openActionMenuId === file.id
+                                ? 'bg-slate-100 text-slate-700'
+                                : 'text-slate-400 hover:bg-slate-100 hover:text-slate-600'
+                            }`}
+                            title="More actions"
+                            aria-label={`More actions for ${file.name}`}
+                            aria-expanded={openActionMenuId === file.id}
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              setOpenActionMenuId(prev => prev === file.id ? null : file.id);
+                            }}
+                          >
+                            <MoreVertical className="w-4 h-4" />
+                          </button>
+
+                          {openActionMenuId === file.id && (
+                            <div
+                              className="absolute right-0 top-full z-30 mt-2 w-40 overflow-hidden rounded-xl border border-slate-200 bg-white py-1 text-left shadow-xl shadow-slate-900/10"
+                              onClick={event => event.stopPropagation()}
+                            >
+                              {file.type === 'file' && (
+                                <button
+                                  type="button"
+                                  className="flex w-full items-center gap-2 px-3 py-2 text-sm font-semibold text-slate-600 transition-colors hover:bg-indigo-50 hover:text-indigo-600"
+                                  onClick={() => {
+                                    setOpenActionMenuId(null);
+                                    onDownload(file);
+                                  }}
+                                >
+                                  <Download className="h-4 w-4" />
+                                  Download
+                                </button>
+                              )}
+                              <button
+                                type="button"
+                                className="flex w-full items-center gap-2 px-3 py-2 text-sm font-semibold text-slate-600 transition-colors hover:bg-indigo-50 hover:text-indigo-600"
+                                onClick={() => {
+                                  setOpenActionMenuId(null);
+                                  onRename(file);
+                                }}
+                              >
+                                <Pencil className="h-4 w-4" />
+                                Rename
+                              </button>
+                              <button
+                                type="button"
+                                className="flex w-full items-center gap-2 px-3 py-2 text-sm font-semibold text-red-600 transition-colors hover:bg-red-50"
+                                onClick={() => {
+                                  setOpenActionMenuId(null);
+                                  onDelete(file.id);
+                                }}
+                              >
+                                <Trash2 className="h-4 w-4" />
+                                Delete
+                              </button>
+                            </div>
+                          )}
+                        </div>
                       </div>
                     </td>
                   </tr>
