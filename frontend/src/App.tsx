@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import type { ChangeEvent, DragEvent } from 'react'
-import { FileService, type FileItem } from './api/fileService'
+import { FileService, FileServiceError, type FileItem } from './api/fileService'
 import { Breadcrumbs } from './components/Breadcrumbs'
 import { DragUploadOverlay } from './components/DragUploadOverlay'
 import { FileBrowser } from './components/file-browser/FileBrowser'
@@ -29,6 +29,12 @@ function App() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const toastIdRef = useRef(0);
   const modalOpen = Boolean(previewFile || videoFile || dialog);
+
+  const sortFilesByBrowserOrder = (items: FileItem[]) =>
+    [...items].sort((left, right) => {
+      if (left.type !== right.type) return left.type === 'folder' ? -1 : 1;
+      return left.name.localeCompare(right.name);
+    });
 
   const showToast = (toast: Omit<ToastMessage, 'id'>) => {
     const id = toastIdRef.current + 1;
@@ -179,6 +185,52 @@ function App() {
             tone: 'error',
             title: 'Delete failed',
             message: 'The item was not removed. Try again in a moment.',
+          });
+        }
+      },
+    });
+  };
+
+  const handleRename = async (item: FileItem) => {
+    setDialog({
+      type: 'input',
+      title: 'Rename item',
+      message: `Choose a new name for "${item.name}".`,
+      placeholder: 'Item name',
+      initialValue: item.name,
+      confirmLabel: 'Rename',
+      onConfirm: async (name: string) => {
+        const nextName = name.trim();
+        if (nextName === item.name) return;
+
+        try {
+          const renamedItem = await FileService.renameItem(item.id, nextName);
+          updateFolderCache(currentParentId, prev => sortFilesByBrowserOrder(
+            prev.map(file => file.id === renamedItem.id ? renamedItem : file)
+          ));
+
+          const nextPathStack = pathStack.map(folder =>
+            folder.id === renamedItem.id ? { ...folder, name: renamedItem.name } : folder
+          );
+          const pathChanged = nextPathStack.some((folder, index) => folder.name !== pathStack[index]?.name);
+          if (pathChanged) {
+            writeFolderLocationToUrl({ currentParentId, pathStack: nextPathStack });
+            setPathStack(nextPathStack);
+          }
+
+          showToast({
+            tone: 'success',
+            title: 'Item renamed',
+            message: `"${renamedItem.name}" is ready.`,
+          });
+        } catch (error) {
+          console.error('Rename failed:', error);
+          showToast({
+            tone: 'error',
+            title: 'Rename failed',
+            message: error instanceof FileServiceError && error.status === 409
+              ? 'An item with this name already exists in this folder.'
+              : 'The item was not renamed. Try again in a moment.',
           });
         }
       },
@@ -368,6 +420,7 @@ function App() {
           onGoUp={handleGoUp}
           onRefresh={() => loadFiles(currentParentId, { force: true })}
           onDownload={handleDownload}
+          onRename={handleRename}
           onDelete={handleDelete}
         />
       </main>
