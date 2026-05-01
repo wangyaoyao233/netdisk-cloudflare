@@ -42,17 +42,17 @@ export function ToastViewport({ toasts, onDismiss }: ToastViewportProps) {
             className="flex items-start gap-3 rounded-2xl border border-slate-200 bg-white p-4 shadow-xl shadow-slate-900/10"
             role="status"
           >
-            <div className={`rounded-xl border p-2 ${tone.className}`}>
+            <div className={`shrink-0 rounded-xl border p-2 ${tone.className}`}>
               <Icon className="h-4 w-4" />
             </div>
             <div className="min-w-0 flex-1">
-              <p className="text-sm font-bold text-slate-900">{toast.title}</p>
-              {toast.message && <p className="mt-1 text-sm leading-5 text-slate-500">{toast.message}</p>}
+              <p className="max-w-full text-sm font-bold text-slate-900 [overflow-wrap:anywhere]">{toast.title}</p>
+              {toast.message && <p className="mt-1 max-w-full text-sm leading-5 text-slate-500 [overflow-wrap:anywhere]">{toast.message}</p>}
             </div>
             <button
               type="button"
               onClick={() => onDismiss(toast.id)}
-              className="rounded-lg p-1.5 text-slate-400 transition-all hover:bg-slate-100 hover:text-slate-600"
+              className="shrink-0 rounded-lg p-1.5 text-slate-400 transition-all hover:bg-slate-100 hover:text-slate-600"
               aria-label="Dismiss notification"
             >
               <X className="h-4 w-4" />
