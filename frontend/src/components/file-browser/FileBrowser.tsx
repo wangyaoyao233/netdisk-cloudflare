@@ -45,11 +45,11 @@ export function FileBrowser({
   const pointerStartRef = useRef<{ x: number; y: number } | null>(null);
   const didDragRef = useRef(false);
   const dragThreshold = 6;
+  const closeActionMenu = () => setOpenActionMenuId(null);
 
   useEffect(() => {
     if (!openActionMenuId) return;
 
-    const closeActionMenu = () => setOpenActionMenuId(null);
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key === 'Escape') closeActionMenu();
     };
@@ -78,6 +78,13 @@ export function FileBrowser({
   };
 
   const handleRowClick = (file: FileItem) => {
+    if (openActionMenuId) {
+      closeActionMenu();
+      pointerStartRef.current = null;
+      didDragRef.current = false;
+      return;
+    }
+
     if (didDragRef.current) {
       pointerStartRef.current = null;
       didDragRef.current = false;
@@ -88,11 +95,23 @@ export function FileBrowser({
   };
 
   const handleRowDoubleClick = (file: FileItem) => {
+    if (openActionMenuId) {
+      closeActionMenu();
+      return;
+    }
+
     if (didDragRef.current) return;
     onEnterFolder(file);
   };
 
   const handleParentRowClick = () => {
+    if (openActionMenuId) {
+      closeActionMenu();
+      pointerStartRef.current = null;
+      didDragRef.current = false;
+      return;
+    }
+
     if (didDragRef.current) {
       pointerStartRef.current = null;
       didDragRef.current = false;
