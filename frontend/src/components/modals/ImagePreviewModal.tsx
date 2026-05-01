@@ -7,20 +7,14 @@ interface ImagePreviewModalProps {
 
 export function ImagePreviewModal({ file, onClose }: ImagePreviewModalProps) {
   return (
-    <div
-      className="fixed inset-0 z-[60] bg-slate-900/90 backdrop-blur-md flex items-center justify-center p-4 sm:p-10"
-      onClick={onClose}
-    >
+    <div className="fixed inset-0 z-[60] flex select-none items-center justify-center bg-slate-900/90 p-4 backdrop-blur-md sm:p-10">
       <button
         className="absolute top-6 right-6 p-3 bg-white/10 hover:bg-white/20 text-white rounded-full transition-all"
         onClick={onClose}
       >
         <X className="w-6 h-6" />
       </button>
-      <div
-        className="relative max-w-full max-h-full flex flex-col items-center gap-4"
-        onClick={event => event.stopPropagation()}
-      >
+      <div className="relative max-w-full max-h-full flex flex-col items-center gap-4">
         <img
           src={file.url}
           alt={file.name}

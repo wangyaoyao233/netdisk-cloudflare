@@ -11,20 +11,14 @@ interface VideoPlayerModalProps {
 
 export function VideoPlayerModal({ file, videoRef, onClose, onDownload }: VideoPlayerModalProps) {
   return (
-    <div
-      className="fixed inset-0 z-[60] bg-slate-950/95 backdrop-blur-md flex items-center justify-center p-4 sm:p-8"
-      onClick={onClose}
-    >
+    <div className="fixed inset-0 z-[60] flex select-none items-center justify-center bg-slate-950/95 p-4 backdrop-blur-md sm:p-8">
       <button
         className="absolute top-6 right-6 p-3 bg-white/10 hover:bg-white/20 text-white rounded-full transition-all"
         onClick={onClose}
       >
         <X className="w-6 h-6" />
       </button>
-      <div
-        className="w-full max-w-5xl flex flex-col gap-4"
-        onClick={event => event.stopPropagation()}
-      >
+      <div className="w-full max-w-5xl flex flex-col gap-4">
         <video
           ref={videoRef}
           controls
