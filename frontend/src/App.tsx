@@ -411,6 +411,7 @@ function App() {
           files={files}
           loading={loading}
           currentParentId={currentParentId}
+          currentFolderName={currentFolderName}
           fileInputRef={fileInputRef}
           onCreateFolder={handleCreateFolder}
           onFileInputChange={handleFileInputChange}

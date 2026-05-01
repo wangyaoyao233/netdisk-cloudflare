@@ -12,6 +12,7 @@ interface FileBrowserProps {
   files: FileItem[];
   loading: boolean;
   currentParentId: string;
+  currentFolderName: string;
   fileInputRef: RefObject<HTMLInputElement | null>;
   onCreateFolder: () => void;
   onFileInputChange: (event: ChangeEvent<HTMLInputElement>) => void;
@@ -29,6 +30,7 @@ export function FileBrowser({
   files,
   loading,
   currentParentId,
+  currentFolderName,
   fileInputRef,
   onCreateFolder,
   onFileInputChange,
@@ -46,6 +48,14 @@ export function FileBrowser({
   const didDragRef = useRef(false);
   const dragThreshold = 6;
   const closeActionMenu = () => setOpenActionMenuId(null);
+  const folderCount = files.filter(file => file.type === 'folder').length;
+  const fileCount = files.length - folderCount;
+  const directoryTitle = currentParentId === 'root' ? 'All files' : currentFolderName;
+  const directorySummary = loading
+    ? 'Loading contents...'
+    : files.length === 0
+      ? 'This folder is empty'
+      : `${folderCount} ${folderCount === 1 ? 'folder' : 'folders'} · ${fileCount} ${fileCount === 1 ? 'file' : 'files'}`;
 
   useEffect(() => {
     if (!openActionMenuId) return;
@@ -125,8 +135,8 @@ export function FileBrowser({
     <section className="space-y-6">
       <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-6">
         <div>
-          <h2 className="text-2xl font-bold text-slate-900 tracking-tight">Files & Folders</h2>
-          <p className="text-slate-500 text-sm font-medium">Manage your cloud storage</p>
+          <h2 className="text-2xl font-bold text-slate-900 tracking-tight">{directoryTitle}</h2>
+          <p className="text-slate-500 text-sm font-medium">{directorySummary}</p>
         </div>
 
         <div className="flex flex-wrap items-center gap-3">

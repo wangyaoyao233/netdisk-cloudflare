@@ -13,7 +13,7 @@ export function Breadcrumbs({ currentParentId, pathStack, onNavigate }: Breadcru
         onClick={() => onNavigate(-1)}
         className={`hover:text-indigo-600 transition-colors ${currentParentId === 'root' ? 'text-indigo-600 font-bold' : ''}`}
       >
-        My Files
+        All files
       </button>
       {pathStack.map((folder, index) => (
         <div key={folder.id} className="flex items-center gap-2">
