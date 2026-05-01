@@ -8,7 +8,7 @@ export function AppFooter() {
           <HardDrive className="w-4 h-4" />
           <span className="font-bold text-sm tracking-tighter">CloudNet</span>
         </div>
-        <p className="text-slate-400 text-xs">Built with React & Cloudflare Stack (Worker, D1, R2)</p>
+        <p className="text-slate-400 text-xs">CloudNet by 王雨蒙</p>
       </div>
     </footer>
   );
