@@ -61,12 +61,8 @@ export function AppDialog({ dialog, onClose }: AppDialogProps) {
   return (
     <div
       className="fixed inset-0 z-[70] flex items-center justify-center bg-slate-950/40 px-4 py-8 backdrop-blur-sm"
-      onMouseDown={onClose}
     >
-      <div
-        className="w-full max-w-md overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-2xl shadow-slate-900/20"
-        onMouseDown={event => event.stopPropagation()}
-      >
+      <div className="w-full max-w-md overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-2xl shadow-slate-900/20">
         <div className="flex items-start gap-4 border-b border-slate-100 px-6 py-5">
           <div className={`rounded-2xl p-3 ${isDanger ? 'bg-red-50 text-red-600' : 'bg-indigo-50 text-indigo-600'}`}>
             {isInput ? <FolderPlus className="h-5 w-5" /> : <AlertTriangle className="h-5 w-5" />}
