@@ -10,6 +10,7 @@ import { AppFooter } from './components/layout/AppFooter'
 import { AppHeader } from './components/layout/AppHeader'
 import { ImagePreviewModal } from './components/modals/ImagePreviewModal'
 import { VideoPlayerModal } from './components/modals/VideoPlayerModal'
+import { useFolderFiles } from './hooks/useFolderFiles'
 import { useHlsVideo } from './hooks/useHlsVideo'
 import { isImageFile, isVideoFile } from './utils/fileMedia'
 import { readFolderLocationFromUrl, writeFolderLocationToUrl, type FolderPathItem } from './utils/navigationState'
@@ -18,8 +19,6 @@ function App() {
   const initialLocation = readFolderLocationFromUrl();
   const [dragActive, setDragActive] = useState(false);
   const [uploading, setUploading] = useState(false);
-  const [loading, setLoading] = useState(true);
-  const [files, setFiles] = useState<FileItem[]>([]);
   const [currentParentId, setCurrentParentId] = useState<string>(initialLocation.currentParentId);
   const [pathStack, setPathStack] = useState<FolderPathItem[]>(initialLocation.pathStack);
   const [previewFile, setPreviewFile] = useState<{url: string, name: string} | null>(null);
@@ -30,12 +29,6 @@ function App() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const toastIdRef = useRef(0);
   const modalOpen = Boolean(previewFile || videoFile || dialog);
-
-  useHlsVideo(videoFile, videoRef);
-
-  useEffect(() => {
-    fetchFiles(currentParentId);
-  }, [currentParentId]);
 
   const showToast = (toast: Omit<ToastMessage, 'id'>) => {
     const id = toastIdRef.current + 1;
@@ -49,6 +42,29 @@ function App() {
   const dismissToast = (id: number) => {
     setToasts(prev => prev.filter(toast => toast.id !== id));
   };
+
+  useHlsVideo(videoFile, videoRef);
+
+  const {
+    files,
+    loading,
+    loadFiles,
+    updateFolderCache,
+    clearFolderCache,
+  } = useFolderFiles({
+    onLoadError: ({ error }) => {
+      console.error('Failed to fetch files:', error);
+      showToast({
+        tone: 'error',
+        title: 'Unable to load files',
+        message: 'Please refresh or check the service connection.',
+      });
+    },
+  });
+
+  useEffect(() => {
+    loadFiles(currentParentId);
+  }, [currentParentId, loadFiles]);
 
   useEffect(() => {
     const handlePopState = () => {
@@ -81,23 +97,6 @@ function App() {
       document.body.style.userSelect = originalUserSelect;
     };
   }, [modalOpen]);
-
-  const fetchFiles = async (parentId: string) => {
-    setLoading(true);
-    try {
-      const data = await FileService.getFiles(parentId);
-      setFiles(data);
-    } catch (error) {
-      console.error('Failed to fetch files:', error);
-      showToast({
-        tone: 'error',
-        title: 'Unable to load files',
-        message: 'Please refresh or check the service connection.',
-      });
-    } finally {
-      setLoading(false);
-    }
-  };
 
   const handleDrag = (event: DragEvent) => {
     event.preventDefault();
@@ -141,7 +140,7 @@ function App() {
         r2Key
       });
 
-      fetchFiles(currentParentId);
+      await loadFiles(currentParentId, { force: true });
     } catch (error) {
       console.error('Upload failed:', error);
       showToast({
@@ -165,7 +164,10 @@ function App() {
       onConfirm: async () => {
         try {
           await FileService.deleteFile(id);
-          setFiles(prev => prev.filter(file => file.id !== id));
+          updateFolderCache(currentParentId, prev => prev.filter(file => file.id !== id));
+          if (item?.type === 'folder') {
+            clearFolderCache(item.id);
+          }
           showToast({
             tone: 'success',
             title: 'Item deleted',
@@ -259,7 +261,7 @@ function App() {
       onConfirm: async (name: string) => {
         try {
           await FileService.createFolder(name, currentParentId);
-          fetchFiles(currentParentId);
+          await loadFiles(currentParentId, { force: true });
           showToast({
             tone: 'success',
             title: 'Folder created',
@@ -364,7 +366,7 @@ function App() {
           onPreview={handlePreview}
           onEnterFolder={handleEnterFolder}
           onGoUp={handleGoUp}
-          onRefresh={() => fetchFiles(currentParentId)}
+          onRefresh={() => loadFiles(currentParentId, { force: true })}
           onDownload={handleDownload}
           onDelete={handleDelete}
         />
