@@ -5,6 +5,9 @@ import { FileService, type FileItem } from '../../api/fileService'
 import { getFileIcon, getVideoStatusLabel } from '../../utils/fileMedia'
 import { FileThumbnail } from './FileThumbnail'
 
+// Keep this in sync with the tallest action menu until the menu is rendered as a floating layer.
+const ACTION_MENU_BOTTOM_SPACE_CLASS = 'h-40';
+
 interface FileBrowserProps {
   files: FileItem[];
   loading: boolean;
@@ -304,6 +307,11 @@ export function FileBrowser({
                   </tr>
                 );
               })}
+              {!loading && files.length > 0 && (
+                <tr aria-hidden="true">
+                  <td colSpan={4} className={`${ACTION_MENU_BOTTOM_SPACE_CLASS} p-0`}></td>
+                </tr>
+              )}
             </tbody>
           </table>
         </div>
