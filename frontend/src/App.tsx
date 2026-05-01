@@ -4,6 +4,8 @@ import { FileService, type FileItem } from './api/fileService'
 import { Breadcrumbs } from './components/Breadcrumbs'
 import { DragUploadOverlay } from './components/DragUploadOverlay'
 import { FileBrowser } from './components/file-browser/FileBrowser'
+import { AppDialog, type AppDialogState } from './components/feedback/AppDialog'
+import { ToastViewport, type ToastMessage } from './components/feedback/ToastViewport'
 import { AppFooter } from './components/layout/AppFooter'
 import { AppHeader } from './components/layout/AppHeader'
 import { ImagePreviewModal } from './components/modals/ImagePreviewModal'
@@ -22,14 +24,30 @@ function App() {
   const [pathStack, setPathStack] = useState<FolderPathItem[]>(initialLocation.pathStack);
   const [previewFile, setPreviewFile] = useState<{url: string, name: string} | null>(null);
   const [videoFile, setVideoFile] = useState<FileItem | null>(null);
+  const [dialog, setDialog] = useState<AppDialogState | null>(null);
+  const [toasts, setToasts] = useState<ToastMessage[]>([]);
   const videoRef = useRef<HTMLVideoElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const toastIdRef = useRef(0);
 
   useHlsVideo(videoFile, videoRef);
 
   useEffect(() => {
     fetchFiles(currentParentId);
   }, [currentParentId]);
+
+  const showToast = (toast: Omit<ToastMessage, 'id'>) => {
+    const id = toastIdRef.current + 1;
+    toastIdRef.current = id;
+    setToasts(prev => [...prev, { ...toast, id }]);
+    window.setTimeout(() => {
+      setToasts(prev => prev.filter(item => item.id !== id));
+    }, 4500);
+  };
+
+  const dismissToast = (id: number) => {
+    setToasts(prev => prev.filter(toast => toast.id !== id));
+  };
 
   useEffect(() => {
     const handlePopState = () => {
@@ -49,6 +67,11 @@ function App() {
       setFiles(data);
     } catch (error) {
       console.error('Failed to fetch files:', error);
+      showToast({
+        tone: 'error',
+        title: 'Unable to load files',
+        message: 'Please refresh or check the service connection.',
+      });
     } finally {
       setLoading(false);
     }
@@ -99,20 +122,43 @@ function App() {
       fetchFiles(currentParentId);
     } catch (error) {
       console.error('Upload failed:', error);
-      alert('Upload failed. Check console for details.');
+      showToast({
+        tone: 'error',
+        title: 'Upload failed',
+        message: 'Check the file and try again.',
+      });
     } finally {
       setUploading(false);
     }
   };
 
   const handleDelete = async (id: string) => {
-    if (!confirm('Are you sure you want to delete this item?')) return;
-    try {
-      await FileService.deleteFile(id);
-      setFiles(prev => prev.filter(file => file.id !== id));
-    } catch (error) {
-      console.error('Delete failed:', error);
-    }
+    const item = files.find(file => file.id === id);
+    setDialog({
+      type: 'confirm',
+      title: 'Delete item',
+      message: item ? `Delete "${item.name}"? This action cannot be undone.` : 'Delete this item? This action cannot be undone.',
+      confirmLabel: 'Delete',
+      tone: 'danger',
+      onConfirm: async () => {
+        try {
+          await FileService.deleteFile(id);
+          setFiles(prev => prev.filter(file => file.id !== id));
+          showToast({
+            tone: 'success',
+            title: 'Item deleted',
+            message: item ? `"${item.name}" was removed.` : undefined,
+          });
+        } catch (error) {
+          console.error('Delete failed:', error);
+          showToast({
+            tone: 'error',
+            title: 'Delete failed',
+            message: 'The item was not removed. Try again in a moment.',
+          });
+        }
+      },
+    });
   };
 
   const handleDownload = async (file: FileItem) => {
@@ -127,6 +173,11 @@ function App() {
       document.body.removeChild(link);
     } catch (error) {
       console.error('Download failed:', error);
+      showToast({
+        tone: 'error',
+        title: 'Download failed',
+        message: 'Could not create a download link for this file.',
+      });
     }
   };
 
@@ -143,11 +194,19 @@ function App() {
       }
 
       if (file.videoStatus === 'failed') {
-        alert(file.videoError || 'Video processing failed.');
+        showToast({
+          tone: 'error',
+          title: 'Video processing failed',
+          message: file.videoError || 'The transcoder reported a failure for this file.',
+        });
         return;
       }
 
-      alert('Video is still processing. Refresh the file list in a moment.');
+      showToast({
+        tone: 'info',
+        title: 'Video is still processing',
+        message: 'Refresh the file list in a moment.',
+      });
       return;
     }
 
@@ -157,6 +216,11 @@ function App() {
         setPreviewFile({ url, name: file.name });
       } catch (error) {
         console.error('Preview failed:', error);
+        showToast({
+          tone: 'error',
+          title: 'Preview failed',
+          message: 'Could not load a preview for this file.',
+        });
       }
     } else {
       handleDownload(file);
@@ -164,14 +228,31 @@ function App() {
   };
 
   const handleCreateFolder = async () => {
-    const name = prompt('Enter folder name:');
-    if (!name) return;
-    try {
-      await FileService.createFolder(name, currentParentId);
-      fetchFiles(currentParentId);
-    } catch (error) {
-      console.error('Failed to create folder:', error);
-    }
+    setDialog({
+      type: 'input',
+      title: 'New folder',
+      message: 'Create a folder in the current directory.',
+      placeholder: 'Folder name',
+      confirmLabel: 'Create folder',
+      onConfirm: async (name: string) => {
+        try {
+          await FileService.createFolder(name, currentParentId);
+          fetchFiles(currentParentId);
+          showToast({
+            tone: 'success',
+            title: 'Folder created',
+            message: `"${name}" is ready.`,
+          });
+        } catch (error) {
+          console.error('Failed to create folder:', error);
+          showToast({
+            tone: 'error',
+            title: 'Folder creation failed',
+            message: 'Choose another name or try again.',
+          });
+        }
+      },
+    });
   };
 
   const handleEnterFolder = (folder: FileItem) => {
@@ -227,6 +308,16 @@ function App() {
           onDownload={handleDownload}
         />
       )}
+
+      <AppDialog
+        dialog={dialog}
+        onClose={() => setDialog(null)}
+      />
+
+      <ToastViewport
+        toasts={toasts}
+        onDismiss={dismissToast}
+      />
 
       <AppHeader uploading={uploading} />
 
