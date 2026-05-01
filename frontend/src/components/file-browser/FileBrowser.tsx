@@ -1,4 +1,4 @@
-import { Download, Eye, Folder, MoreVertical, Pencil, PlayCircle, Plus, RefreshCw, Search, Trash2, Upload } from 'lucide-react'
+import { Download, Folder, MoreVertical, Pencil, Plus, RefreshCw, Search, Trash2, Upload } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import type { ChangeEvent, PointerEvent, RefObject } from 'react'
 import { FileService, type FileItem } from '../../api/fileService'
@@ -224,17 +224,9 @@ export function FileBrowser({
                       {file.createdAt ? new Date(file.createdAt).toLocaleDateString() : '--'}
                     </td>
                     <td className="relative px-8 py-5 text-right">
-                      <div className={`flex items-center justify-end gap-1 transition-opacity ${
-                        openActionMenuId === file.id ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'
-                      }`}>
+                      <div className="flex items-center justify-end gap-1">
                         {file.type === 'file' && (
                           <>
-                            <button
-                              onClick={(event) => { event.stopPropagation(); onPreview(file); }}
-                              className="p-2 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-all" title="Preview"
-                            >
-                              {file.videoStatus === 'completed' ? <PlayCircle className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                            </button>
                             {(file.videoStatus === 'pending' || file.videoStatus === 'processing') && (
                               <button
                                 onClick={(event) => { event.stopPropagation(); onRefresh(); }}
